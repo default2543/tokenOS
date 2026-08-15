@@ -5,7 +5,7 @@ from hashlib import sha256
 import json
 from typing import Any, Literal
 
-StrategyName = Literal["no-memory", "full-history"]
+StrategyName = Literal["no-memory", "full-history", "patchsearch"]
 FailureKind = Literal[
     "wrong_answer",
     "runtime_error",
@@ -55,6 +55,18 @@ class EvaluationResult:
 
 
 @dataclass(frozen=True, slots=True)
+class Patch:
+    """A compact executable constraint learned from one failed attempt."""
+
+    task_id: str
+    entry_point: str
+    assertion: str
+    source_attempt: int
+    failure_kind: FailureKind
+    validated: bool = True
+
+
+@dataclass(frozen=True, slots=True)
 class AttemptRecord:
     run_id: str
     task_id: str
@@ -73,6 +85,7 @@ class AttemptRecord:
     estimated_cost_usd: float
     created_at: str
     resolved_model: str | None = None
+    patches: tuple[Patch, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -85,6 +98,7 @@ class AttemptRecord:
         if evaluation.get("feedback") is not None:
             evaluation["feedback"] = FailureFeedback(**evaluation["feedback"])
         values["evaluation"] = EvaluationResult(**evaluation)
+        values["patches"] = tuple(Patch(**item) for item in values.get("patches", ()))
         return cls(**values)
 
 

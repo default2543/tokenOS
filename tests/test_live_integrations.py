@@ -48,20 +48,23 @@ def test_live_docker_evaluator_passes_reference_completion() -> None:
 
 @pytest.mark.docker
 @pytest.mark.parametrize(
-    ("completion", "failure_kind"),
+    ("completion", "failure_kind", "has_oracle_counterexample"),
     [
-        ("    return (\n", "syntax_error"),
-        ("    raise RuntimeError('test failure')\n", "runtime_error"),
-        ("    while True:\n        pass\n", "timeout"),
+        ("    return (\n", "syntax_error", False),
+        ("    raise RuntimeError('test failure')\n", "runtime_error", True),
+        ("    while True:\n        pass\n", "timeout", True),
         (
             "    import socket\n"
             "    socket.create_connection(('example.com', 80), timeout=0.1)\n"
             "    return False\n",
             "runtime_error",
+            True,
         ),
     ],
 )
-def test_live_docker_failure_isolation(completion: str, failure_kind: str) -> None:
+def test_live_docker_failure_isolation(
+    completion: str, failure_kind: str, has_oracle_counterexample: bool
+) -> None:
     if os.environ.get("TOKENOS_RUN_DOCKER_SECURITY_TESTS") != "1":
         pytest.skip("set TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 for isolation tests")
     status = docker_status("tokenos-evalplus:0.3.1")
@@ -79,3 +82,8 @@ def test_live_docker_failure_isolation(completion: str, failure_kind: str) -> No
     assert not result.passed
     assert result.feedback is not None
     assert result.feedback.kind == failure_kind
+    assert (result.feedback.input_repr is not None) is has_oracle_counterexample
+    assert (result.feedback.expected_repr is not None) is has_oracle_counterexample
+    if has_oracle_counterexample:
+        assert result.feedback.input_repr is not None
+        assert result.feedback.input_repr.startswith("(")

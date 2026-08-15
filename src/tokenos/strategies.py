@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from typing import Sequence
 
-from tokenos.models import AttemptRecord, FailureFeedback, Problem, StrategyName
+from tokenos.models import AttemptRecord, FailureFeedback, Patch, Problem, StrategyName
+from tokenos.patchsearch.retriever import retrieve_patches
 
 SYSTEM_INSTRUCTIONS = """You solve standalone Python function-completion tasks.
 Return a JSON object with exactly one field named completion. Its value must be the
@@ -33,6 +34,7 @@ def build_prompt(
     attempt: int,
     history: Sequence[AttemptRecord],
     max_attempts: int = 5,
+    patches: Sequence[Patch] | None = None,
 ) -> str:
     sections = [
         f"TASK {problem.task_id}",
@@ -60,6 +62,17 @@ def build_prompt(
             )
         else:
             sections.append("There are no previous attempts.")
+    elif strategy == "patchsearch":
+        selected = list(patches) if patches is not None else retrieve_patches(history)
+        if selected:
+            sections.append("EXECUTABLE MEMORY")
+            sections.extend(patch.assertion for patch in selected)
+            sections.append(
+                "Satisfy every executable constraint and produce a complete corrected "
+                "completion, not a patch or explanation."
+            )
+        else:
+            sections.append("There are no validated patches from previous attempts.")
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
     return "\n\n".join(sections).rstrip() + "\n"

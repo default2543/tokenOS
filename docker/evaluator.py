@@ -4,7 +4,6 @@ import contextlib
 import io
 import json
 import multiprocessing
-from queue import Empty
 import sys
 from typing import Any
 
@@ -26,7 +25,7 @@ def clipped_repr(value: Any) -> str:
     return rendered
 
 
-def diagnostic_worker(solution: str, entry_point: str, inp: Any, queue: Any) -> None:
+def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any) -> None:
     namespace: dict[str, Any] = {}
     try:
         reliability_guard(maximum_memory_bytes=384 * 1024 * 1024)
@@ -34,7 +33,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, queue: Any) -> 
             exec(compile(solution, "candidate.py", "exec"), namespace)
         function = namespace.get(entry_point)
         if not callable(function):
-            queue.put(
+            connection.send(
                 {
                     "kind": "missing_entry_point",
                     "message": f"candidate did not define callable {entry_point}",
@@ -43,7 +42,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, queue: Any) -> 
             return
         with swallow_io():
             actual = function(*inp)
-        queue.put(
+        connection.send(
             {
                 "kind": "wrong_answer",
                 "message": "candidate output did not match the reference oracle",
@@ -51,7 +50,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, queue: Any) -> 
             }
         )
     except SyntaxError as exc:
-        queue.put(
+        connection.send(
             {
                 "kind": "syntax_error",
                 "message": f"{exc.msg} at line {exc.lineno}",
@@ -59,7 +58,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, queue: Any) -> 
             }
         )
     except BaseException as exc:
-        queue.put(
+        connection.send(
             {
                 "kind": "runtime_error",
                 "message": clipped_repr(str(exc)),
@@ -89,30 +88,46 @@ def diagnose(
             "message": "candidate failed before any test completed",
         }
     index = min(max(fail_index, 0), len(inputs) - 1)
-    queue: Any = multiprocessing.Queue(maxsize=1)
+    receiver, sender = multiprocessing.Pipe(duplex=False)
     process = multiprocessing.Process(
         target=diagnostic_worker,
-        args=(solution, problem["entry_point"], inputs[index], queue),
+        args=(solution, problem["entry_point"], inputs[index], sender),
     )
     process.start()
-    process.join(timeout=3.0)
-    if process.is_alive():
-        process.kill()
-        process.join(timeout=1.0)
-        diagnostic = {
-            "kind": "timeout",
-            "message": "candidate timed out on the first failing input",
-        }
-    else:
-        try:
-            diagnostic = queue.get(timeout=0.2)
-        except Empty:
+    sender.close()
+    try:
+        if receiver.poll(3.0):
+            diagnostic = receiver.recv()
+        elif process.is_alive():
+            diagnostic = {
+                "kind": "timeout",
+                "message": "candidate timed out on the first failing input",
+            }
+        else:
             diagnostic = {
                 "kind": "runtime_error",
                 "message": "candidate process exited without a diagnostic",
             }
-    diagnostic["input_repr"] = clipped_repr(inputs[index])
-    if diagnostic["kind"] == "wrong_answer":
+    except EOFError:
+        if process.is_alive():
+            diagnostic = {
+                "kind": "timeout",
+                "message": "candidate timed out on the first failing input",
+            }
+        else:
+            diagnostic = {
+                "kind": "runtime_error",
+                "message": "candidate process exited without a diagnostic",
+            }
+    finally:
+        if process.is_alive():
+            process.kill()
+        process.join(timeout=1.0)
+        receiver.close()
+    # EvalPlus stores positional arguments as lists. Persist them as a tuple so
+    # PatchSearch can safely render ``entry_point(*args)`` without ambiguity.
+    diagnostic["input_repr"] = clipped_repr(tuple(inputs[index]))
+    if diagnostic["kind"] in {"wrong_answer", "runtime_error", "timeout"}:
         diagnostic["expected_repr"] = clipped_repr(expected[index])
     return diagnostic
 

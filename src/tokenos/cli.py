@@ -31,7 +31,7 @@ from tokenos.runner import BenchmarkRunner
 from tokenos.strategies import parse_completion
 
 DEFAULT_RUNS_ROOT = Path("runs")
-VALID_STRATEGIES = {"no-memory", "full-history"}
+VALID_STRATEGIES = {"no-memory", "full-history", "patchsearch"}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -50,7 +50,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     benchmark = subparsers.add_parser("benchmark", help="start a benchmark run")
     benchmark.add_argument(
-        "--strategies", default="no-memory,full-history", help="comma-separated"
+        "--strategies", default="full-history,patchsearch", help="comma-separated"
     )
     selection = benchmark.add_mutually_exclusive_group(required=True)
     selection.add_argument("--all", action="store_true", help="run all 164 tasks")

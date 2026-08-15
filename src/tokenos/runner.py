@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import threading
 import time
 from typing import Protocol, Sequence
@@ -20,6 +20,8 @@ from tokenos.models import (
     StrategyName,
 )
 from tokenos.provider import ModelProviderError, ModelResponse
+from tokenos.patchsearch.extractor import extract_patch
+from tokenos.patchsearch.retriever import retrieve_patches
 from tokenos.strategies import build_prompt, parse_completion
 
 
@@ -90,12 +92,14 @@ class BenchmarkRunner:
             return
         next_attempt = max((item.attempt for item in history), default=0) + 1
         for attempt in range(next_attempt, self.config.max_attempts + 1):
+            patches = retrieve_patches(history) if strategy == "patchsearch" else []
             prompt = build_prompt(
                 strategy,
                 problem,
                 attempt,
                 history,
                 max_attempts=self.config.max_attempts,
+                patches=patches,
             )
             reservation = self.budget.acquire(prompt)
             if reservation is None:
@@ -180,7 +184,12 @@ class BenchmarkRunner:
                 estimated_cost_usd=cost,
                 created_at=utc_now(),
                 resolved_model=response.resolved_model,
+                patches=(),
             )
+            if strategy == "patchsearch" and not evaluation.passed:
+                patch = extract_patch(problem, evaluation.feedback, attempt)
+                if patch is not None:
+                    record = replace(record, patches=(patch,))
             with self._records_lock:
                 self._records.append(record)
             self.store.append("attempt_completed", record=record.to_dict())

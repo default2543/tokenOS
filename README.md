@@ -1,11 +1,15 @@
 # TokenOS
 
-TokenOS is an experimental context-management runtime for coding agents. Phase 1
-provides a reproducible benchmark harness for comparing two retry strategies:
+TokenOS is an experimental context-management runtime for coding agents. Phase 2
+adds PatchSearch to the reproducible benchmark harness, which now compares three
+retry strategies:
 
 - **No Memory:** each attempt receives only the original problem.
 - **Full History:** each attempt receives every prior completion and one test
   counterexample per failure.
+- **PatchSearch:** each oracle-backed failure is converted into a validated,
+  executable assertion; later attempts receive deduplicated assertions instead
+  of verbose completion and failure history.
 
 The harness uses Azure OpenAI for generation, HumanEval+ for problems and oracle
 tests, and a locked-down Docker container for generated-code execution.
@@ -94,7 +98,7 @@ Run the fixed five-task smoke suite:
 
 ```bash
 tokenos benchmark \
-  --strategies no-memory,full-history \
+  --strategies full-history,patchsearch \
   --task-ids HumanEval/0,HumanEval/1,HumanEval/2,HumanEval/3,HumanEval/4 \
   --budget-usd 10 \
   --concurrency 4
@@ -104,7 +108,7 @@ Run all 164 HumanEval+ tasks once per strategy:
 
 ```bash
 tokenos benchmark \
-  --strategies no-memory,full-history \
+  --strategies full-history,patchsearch \
   --all \
   --budget-usd 10 \
   --concurrency 4
@@ -139,6 +143,11 @@ Adaptive retries are reported as `solve@1`, `solve@3`, and `solve@5`. These are
 cumulative solve rates, not the classical independent-sampling `pass@k` estimator.
 A task succeeds only when both HumanEval base and HumanEval+ tests pass.
 
+PatchSearch summaries also report `patches_generated` and `patches_retrieved`.
+Validated patches are stored in the append-only attempt records, so interrupted
+runs reconstruct the same patch memory when resumed. Patch extraction is local
+and deterministic and therefore adds no model calls or token cost.
+
 ## Execution Boundary
 
 Every generated program runs in a fresh container with no network, no workspace
@@ -163,5 +172,5 @@ TOKENOS_RUN_AZURE_TEST=1 python -m pytest -m azure
 TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 python -m pytest -m docker
 ```
 
-PatchSearch, generalized memory objects, token allocation, and the interactive
-demo begin in later phases and are intentionally absent from this implementation.
+Generalized memory objects, token allocation, and the interactive demo begin in
+later phases and are intentionally absent from this implementation.

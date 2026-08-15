@@ -67,6 +67,8 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
                 solved_at_k / len(config.task_ids) if config.task_ids else 0.0
             )
         total_tokens = usage["input_tokens"] + usage["output_tokens"]
+        retries = [r for r in strategy_records if r.attempt > 1]
+        patch_bearing = [r for r in retries if "\nassert " in r.prompt]
         result["strategies"][strategy] = {
             "complete": is_complete,
             "attempted_tasks": len(attempted),
@@ -88,6 +90,17 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
                 r.evaluation_latency_seconds for r in strategy_records
             ),
             "failure_distribution": dict(sorted(failures.items())),
+            "patches_generated": sum(len(r.patches) for r in strategy_records),
+            "patches_retrieved": sum(
+                prompt.count("\nassert ")
+                for prompt in (r.prompt for r in strategy_records)
+            ),
+            "retry_model_calls": len(retries),
+            "retry_input_tokens": sum(r.usage.input_tokens for r in retries),
+            "patch_bearing_attempts": len(patch_bearing),
+            "patch_bearing_input_tokens": sum(
+                r.usage.input_tokens for r in patch_bearing
+            ),
         }
     paired = set(config.task_ids)
     for strategy in config.strategies:
@@ -108,4 +121,3 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
 def _average(values: Iterable[float]) -> float | None:
     items = list(values)
     return round(sum(items) / len(items), 6) if items else None
-

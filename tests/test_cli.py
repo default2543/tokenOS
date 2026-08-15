@@ -11,6 +11,13 @@ def test_strategy_parser_rejects_duplicates_and_unknown_values() -> None:
         _strategies("summary")
 
 
+def test_strategy_parser_accepts_patchsearch() -> None:
+    assert _strategies("full-history,patchsearch") == (
+        "full-history",
+        "patchsearch",
+    )
+
+
 def test_resume_accepts_explicit_total_budget_cap() -> None:
     args = build_parser().parse_args(["resume", "run-1", "--budget-usd", "20"])
     assert args.run_id == "run-1"

@@ -5,6 +5,7 @@ from tokenos.models import (
     EvaluationResult,
     FailureFeedback,
     ModelUsage,
+    Patch,
     Problem,
     RunConfig,
 )
@@ -14,9 +15,9 @@ __all__ = [
     "EvaluationResult",
     "FailureFeedback",
     "ModelUsage",
+    "Patch",
     "Problem",
     "RunConfig",
 ]
 
 __version__ = "0.1.0"
-
