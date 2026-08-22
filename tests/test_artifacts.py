@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 from pathlib import Path
 
 import pytest
@@ -21,6 +22,33 @@ def test_manifest_events_and_config_validation(tmp_path: Path) -> None:
     store.write_manifest(config())
     store.append("request_started", prompt="safe", attempt=1)
     assert store.events()[0]["type"] == "request_started"
+    store.validate_config(config())
+
+
+def test_manifest_without_new_optional_config_field_remains_valid(
+    tmp_path: Path,
+) -> None:
+    store = EventStore(tmp_path, "run", create=True)
+    values = config().public_dict()
+    values.pop("dataset_name")
+    fingerprint_values = dict(values)
+    fingerprint_values.pop("run_id")
+    fingerprint_values.pop("created_at")
+    fingerprint = sha256(
+        json.dumps(
+            fingerprint_values, sort_keys=True, separators=(",", ":")
+        ).encode()
+    ).hexdigest()
+    store.manifest_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "config_fingerprint": fingerprint,
+                "config": values,
+            }
+        ),
+        encoding="utf-8",
+    )
     store.validate_config(config())
 
 

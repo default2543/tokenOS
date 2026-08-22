@@ -162,3 +162,38 @@ def test_patchsearch_stores_and_retrieves_counterexample(tmp_path: Path) -> None
     assert summary["strategies"]["patchsearch"]["retry_input_tokens"] == 20
     assert summary["strategies"]["patchsearch"]["patch_bearing_attempts"] == 1
     assert summary["strategies"]["patchsearch"]["patch_bearing_input_tokens"] == 20
+
+
+def test_explained_patchsearch_is_persistent_and_measured(tmp_path: Path) -> None:
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id="run",
+        strategies=("patchsearch-explained",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=2,
+        concurrency=1,
+        budget_usd=10,
+        input_usd_per_mtok=1,
+        cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    records = store.completed_attempts()
+    assert records[0].patches[0].explanation == (
+        "Previous candidate returned False."
+    )
+    assert "Explanation: Previous candidate returned False." in provider.prompts[1]
+    assert "Constraint: assert f(*()) == True" in provider.prompts[1]
+    metrics = summary["strategies"]["patchsearch-explained"]
+    assert metrics["solved_tasks"] == 1
+    assert metrics["patches_generated"] == 1
+    assert metrics["patches_retrieved"] == 1
+    assert metrics["explanations_generated"] == 1
+    assert metrics["explanations_retrieved"] == 1
+    assert metrics["explanation_bearing_attempts"] == 1
+    assert metrics["explanation_bearing_input_tokens"] == 20
+    assert metrics["explanation_retry_successes"] == 1

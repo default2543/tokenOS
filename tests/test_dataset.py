@@ -31,3 +31,29 @@ def test_unknown_task_is_rejected(tmp_path: Path) -> None:
     with pytest.raises(DatasetError, match="unknown task"):
         select_problems(load_problems(path), ["HumanEval/9"])
 
+
+def test_load_bigcodebench_hard_problem(tmp_path: Path) -> None:
+    path = tmp_path / "hard.jsonl.gz"
+    row = {
+        "task_id": "BigCodeBench/13",
+        "complete_prompt": "import os\n\ndef task_func():\n",
+        "entry_point": "task_func",
+        "test": "import unittest\nclass TestCases(unittest.TestCase):\n    pass\n",
+        "libs": "['os']",
+    }
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        handle.write(json.dumps(row) + "\n")
+
+    problem = load_problems(path, dataset_name="bigcodebench-hard")[
+        "BigCodeBench/13"
+    ]
+    assert problem.benchmark == "bigcodebench-hard"
+    assert problem.prompt == row["complete_prompt"]
+    assert problem.test_code == row["test"]
+
+
+def test_unknown_dataset_is_rejected(tmp_path: Path) -> None:
+    path = tmp_path / "data.jsonl.gz"
+    write_dataset(path)
+    with pytest.raises(DatasetError, match="unknown dataset"):
+        load_problems(path, dataset_name="other")

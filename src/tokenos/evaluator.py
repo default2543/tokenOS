@@ -17,7 +17,15 @@ class DockerEvaluator:
         self.config = config
 
     def evaluate(self, problem: Problem, solution: str) -> EvaluationResult:
-        job = json.dumps({"task_id": problem.task_id, "solution": solution})
+        job = json.dumps(
+            {
+                "task_id": problem.task_id,
+                "solution": solution,
+                "entry_point": problem.entry_point,
+                "test_code": problem.test_code,
+                "libraries": problem.libraries,
+            }
+        )
         command = [
             "docker",
             "run",

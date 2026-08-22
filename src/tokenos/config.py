@@ -43,6 +43,8 @@ def config_from_environment(
     task_ids: tuple[str, ...],
     dataset_path: Path,
     dataset_sha256: str,
+    dataset_name: str = "humaneval-plus",
+    dataset_version: str = "v0.1.10",
     max_attempts: int = 5,
     concurrency: int = 4,
     budget_usd: float = 10.0,
@@ -66,6 +68,8 @@ def config_from_environment(
         strategies=strategies,
         task_ids=task_ids,
         dataset_path=str(dataset_path),
+        dataset_name=dataset_name,
+        dataset_version=dataset_version,
         dataset_sha256=dataset_sha256,
         azure_endpoint=endpoint,
         azure_deployment=source.get(

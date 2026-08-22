@@ -39,6 +39,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                     "message": f"candidate did not define callable {entry_point}",
                 }
             )
+            connection.close()
             return
         with swallow_io():
             actual = function(*inp)
@@ -49,6 +50,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                 "actual_repr": clipped_repr(actual),
             }
         )
+        connection.close()
     except SyntaxError as exc:
         connection.send(
             {
@@ -57,6 +59,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                 "exception_type": "SyntaxError",
             }
         )
+        connection.close()
     except BaseException as exc:
         connection.send(
             {
@@ -65,6 +68,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                 "exception_type": type(exc).__name__,
             }
         )
+        connection.close()
 
 
 def diagnose(
@@ -123,6 +127,7 @@ def diagnose(
         if process.is_alive():
             process.kill()
         process.join(timeout=1.0)
+        process.close()
         receiver.close()
     # EvalPlus stores positional arguments as lists. Persist them as a tuple so
     # PatchSearch can safely render ``entry_point(*args)`` without ambiguity.

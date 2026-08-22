@@ -5,7 +5,11 @@ from tokenos.models import (
     ModelUsage,
     Problem,
 )
-from tokenos.patchsearch.extractor import extract_patch
+from tokenos.patchsearch.extractor import (
+    MAX_EXPLANATION_CHARS,
+    explain_failure,
+    extract_patch,
+)
 from tokenos.patchsearch.retriever import retrieve_patches
 from tokenos.strategies import build_prompt
 
@@ -47,6 +51,13 @@ def test_extracts_validated_executable_patch() -> None:
     assert patch is not None
     assert patch.assertion == "assert answer(*(0,)) == 42"
     compile(patch.assertion, "patch", "exec")
+    assert patch.explanation is None
+
+
+def test_explained_patch_contains_deterministic_wrong_answer_context() -> None:
+    patch = extract_patch(PROBLEM, FEEDBACK, 1, include_explanation=True)
+    assert patch is not None
+    assert patch.explanation == "Previous candidate returned 0."
 
 
 def test_extracts_runtime_and_timeout_oracle_patches() -> None:
@@ -61,6 +72,37 @@ def test_extracts_runtime_and_timeout_oracle_patches() -> None:
         assert patch is not None
         assert patch.failure_kind == kind
         assert patch.assertion == "assert answer(*(0,)) == 42"
+
+
+def test_explanations_cover_failure_kinds_and_missing_details() -> None:
+    runtime = FailureFeedback(
+        kind="runtime_error",
+        message="bad\n  value",
+        exception_type="ValueError",
+    )
+    timeout = FailureFeedback(kind="timeout", message="slow")
+    missing_actual = FailureFeedback(kind="wrong_answer", message="mismatch")
+    assert explain_failure(runtime) == (
+        "Previous candidate raised ValueError: bad value."
+    )
+    assert explain_failure(timeout) == (
+        "Previous candidate did not terminate on this input."
+    )
+    assert explain_failure(missing_actual) == (
+        "Previous candidate produced an incorrect result."
+    )
+
+
+def test_explanation_is_single_line_and_bounded() -> None:
+    feedback = FailureFeedback(
+        kind="wrong_answer",
+        message="mismatch",
+        actual_repr="line one\n" + "x" * 300,
+    )
+    explanation = explain_failure(feedback)
+    assert "\n" not in explanation
+    assert len(explanation) == MAX_EXPLANATION_CHARS
+    assert explanation.endswith("...")
 
 
 def test_rejects_non_oracle_and_non_literal_feedback() -> None:
@@ -113,3 +155,23 @@ def test_retrieval_deduplicates_and_prompt_excludes_full_history() -> None:
     assert prompt.count(patch.assertion) == 1
     assert "return 0" not in prompt
     assert "Actual: 0" not in prompt
+
+
+def test_explained_prompt_includes_only_bounded_memory() -> None:
+    patch = extract_patch(PROBLEM, FEEDBACK, 1, include_explanation=True)
+    assert patch is not None
+    history = [_attempt(1, [patch])]
+    prompt = build_prompt("patchsearch-explained", PROBLEM, 2, history)
+    assert f"Explanation: {patch.explanation}" in prompt
+    assert f"Constraint: {patch.assertion}" in prompt
+    assert "return 0" not in prompt
+    assert "Actual: 0" not in prompt
+
+
+def test_old_patch_artifact_without_explanation_is_readable() -> None:
+    patch = extract_patch(PROBLEM, FEEDBACK, 1)
+    assert patch is not None
+    payload = _attempt(1, [patch]).to_dict()
+    payload["patches"][0].pop("explanation")
+    restored = AttemptRecord.from_dict(payload)
+    assert restored.patches[0].explanation is None

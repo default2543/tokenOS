@@ -68,7 +68,14 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
             )
         total_tokens = usage["input_tokens"] + usage["output_tokens"]
         retries = [r for r in strategy_records if r.attempt > 1]
-        patch_bearing = [r for r in retries if "\nassert " in r.prompt]
+        patch_bearing = [
+            r
+            for r in retries
+            if "\nassert " in r.prompt or "\nConstraint: assert " in r.prompt
+        ]
+        explanation_bearing = [
+            r for r in retries if "\nExplanation: " in r.prompt
+        ]
         result["strategies"][strategy] = {
             "complete": is_complete,
             "attempted_tasks": len(attempted),
@@ -92,7 +99,7 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
             "failure_distribution": dict(sorted(failures.items())),
             "patches_generated": sum(len(r.patches) for r in strategy_records),
             "patches_retrieved": sum(
-                prompt.count("\nassert ")
+                prompt.count("\nassert ") + prompt.count("\nConstraint: assert ")
                 for prompt in (r.prompt for r in strategy_records)
             ),
             "retry_model_calls": len(retries),
@@ -100,6 +107,22 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
             "patch_bearing_attempts": len(patch_bearing),
             "patch_bearing_input_tokens": sum(
                 r.usage.input_tokens for r in patch_bearing
+            ),
+            "explanations_generated": sum(
+                patch.explanation is not None
+                for r in strategy_records
+                for patch in r.patches
+            ),
+            "explanations_retrieved": sum(
+                prompt.count("\nExplanation: ")
+                for prompt in (r.prompt for r in strategy_records)
+            ),
+            "explanation_bearing_attempts": len(explanation_bearing),
+            "explanation_bearing_input_tokens": sum(
+                r.usage.input_tokens for r in explanation_bearing
+            ),
+            "explanation_retry_successes": sum(
+                r.evaluation.passed for r in explanation_bearing
             ),
         }
     paired = set(config.task_ids)

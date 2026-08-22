@@ -10,9 +10,12 @@ retry strategies:
 - **PatchSearch:** each oracle-backed failure is converted into a validated,
   executable assertion; later attempts receive deduplicated assertions instead
   of verbose completion and failure history.
+- **Explained PatchSearch:** each assertion is paired with one deterministic,
+  bounded sentence describing the observed failure without another model call.
 
-The harness uses Azure OpenAI for generation, HumanEval+ for problems and oracle
-tests, and a locked-down Docker container for generated-code execution.
+The harness uses Azure OpenAI for generation and locked-down Docker containers
+for generated-code execution. HumanEval+ remains the oracle-rich regression
+benchmark; BigCodeBench-Hard is the harder 148-task diagnostic.
 
 ## Prerequisites
 
@@ -48,6 +51,22 @@ python -m pip install -e '.[dev]'
 docker build -t tokenos-evalplus:0.3.1 -f docker/Dockerfile .
 tokenos dataset fetch
 ```
+
+For the harder diagnostic, fetch its pinned split and build the separate,
+dependency-rich evaluator:
+
+```bash
+tokenos dataset fetch --name bigcodebench-hard
+docker build -t tokenos-bigcodebench-stdlib:0.1.4 \
+  -f docker/BigCodeBenchStdlib.Dockerfile .
+tokenos doctor --dataset bigcodebench-hard
+```
+
+The default smoke evaluator is deliberately small and accepts only Hard tasks
+whose prompts and tests import Python standard-library modules. The optional
+`docker/BigCodeBench.Dockerfile` derives from the immutable official evaluator
+image for broader coverage; that linux/amd64 base is approximately 9 GB to
+download and runs through Docker emulation on ARM Macs.
 
 The evaluator image pins EvalPlus `0.3.1` and preloads HumanEval+ `v0.1.10`.
 The downloaded host dataset is checked as a valid 164-task gzip JSONL file and
@@ -114,6 +133,24 @@ tokenos benchmark \
   --concurrency 4
 ```
 
+Run a low-cost BigCodeBench-Hard smoke diagnostic before scaling to all 148
+tasks:
+
+```bash
+tokenos benchmark \
+  --dataset bigcodebench-hard \
+  --strategies full-history,patchsearch,patchsearch-explained \
+  --task-ids BigCodeBench/13,BigCodeBench/15,BigCodeBench/19 \
+  --budget-usd 1 \
+  --concurrency 2
+```
+
+BigCodeBench exposes bounded unittest traces rather than HumanEval+'s direct
+oracle `(input, expected)` counterexamples. Those traces help Full History, but
+PatchSearch intentionally rejects them unless a safe executable constraint can
+be recovered; this prevents the harder benchmark from inflating memory counts
+with guessed or malformed patches.
+
 If the hard spend cap or an infrastructure error stops a run, its artifacts stay
 resumable:
 
@@ -144,6 +181,8 @@ cumulative solve rates, not the classical independent-sampling `pass@k` estimato
 A task succeeds only when both HumanEval base and HumanEval+ tests pass.
 
 PatchSearch summaries also report `patches_generated` and `patches_retrieved`.
+Explained PatchSearch additionally reports explanation generation, retrieval,
+retry success, and token-use metrics.
 Validated patches are stored in the append-only attempt records, so interrupted
 runs reconstruct the same patch memory when resumed. Patch extraction is local
 and deterministic and therefore adds no model calls or token cost.

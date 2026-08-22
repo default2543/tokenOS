@@ -16,11 +16,15 @@ from tokenos.config import (
     config_from_manifest,
 )
 from tokenos.dataset import (
+    BIGCODEBENCH_HARD_VERSION,
     DEFAULT_DATASET_PATH,
+    DEFAULT_BIGCODEBENCH_HARD_PATH,
     DatasetError,
+    fetch_bigcodebench_hard,
     fetch_humaneval_plus,
     file_sha256,
     load_problems,
+    is_stdlib_problem,
     select_problems,
     sorted_task_ids,
 )
@@ -31,7 +35,21 @@ from tokenos.runner import BenchmarkRunner
 from tokenos.strategies import parse_completion
 
 DEFAULT_RUNS_ROOT = Path("runs")
-VALID_STRATEGIES = {"no-memory", "full-history", "patchsearch"}
+DATASETS = ("humaneval-plus", "bigcodebench-hard")
+DATASET_DEFAULTS = {
+    "humaneval-plus": (DEFAULT_DATASET_PATH, "v0.1.10", "tokenos-evalplus:0.3.1"),
+    "bigcodebench-hard": (
+        DEFAULT_BIGCODEBENCH_HARD_PATH,
+        BIGCODEBENCH_HARD_VERSION,
+        "tokenos-bigcodebench-stdlib:0.1.4",
+    ),
+}
+VALID_STRATEGIES = {
+    "no-memory",
+    "full-history",
+    "patchsearch",
+    "patchsearch-explained",
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,27 +58,30 @@ def build_parser() -> argparse.ArgumentParser:
 
     dataset = subparsers.add_parser("dataset", help="manage benchmark datasets")
     dataset_subparsers = dataset.add_subparsers(dest="dataset_command", required=True)
-    fetch = dataset_subparsers.add_parser("fetch", help="download HumanEval+ v0.1.10")
-    fetch.add_argument("--path", type=Path, default=DEFAULT_DATASET_PATH)
+    fetch = dataset_subparsers.add_parser("fetch", help="download a pinned dataset")
+    fetch.add_argument("--name", choices=DATASETS, default="humaneval-plus")
+    fetch.add_argument("--path", type=Path)
 
     doctor = subparsers.add_parser("doctor", help="validate local and Azure setup")
     doctor.add_argument("--live", action="store_true", help="make a small Azure request")
-    doctor.add_argument("--dataset-path", type=Path, default=DEFAULT_DATASET_PATH)
-    doctor.add_argument("--evaluator-image", default="tokenos-evalplus:0.3.1")
+    doctor.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
+    doctor.add_argument("--dataset-path", type=Path)
+    doctor.add_argument("--evaluator-image")
 
     benchmark = subparsers.add_parser("benchmark", help="start a benchmark run")
+    benchmark.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
     benchmark.add_argument(
         "--strategies", default="full-history,patchsearch", help="comma-separated"
     )
     selection = benchmark.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--all", action="store_true", help="run all 164 tasks")
-    selection.add_argument("--task-ids", help="comma-separated HumanEval task IDs")
-    benchmark.add_argument("--dataset-path", type=Path, default=DEFAULT_DATASET_PATH)
+    selection.add_argument("--all", action="store_true", help="run every dataset task")
+    selection.add_argument("--task-ids", help="comma-separated benchmark task IDs")
+    benchmark.add_argument("--dataset-path", type=Path)
     benchmark.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     benchmark.add_argument("--max-attempts", type=int, default=5)
     benchmark.add_argument("--concurrency", type=int, default=4)
     benchmark.add_argument("--budget-usd", type=float, default=10.0)
-    benchmark.add_argument("--evaluator-image", default="tokenos-evalplus:0.3.1")
+    benchmark.add_argument("--evaluator-image")
 
     resume = subparsers.add_parser("resume", help="resume an interrupted run")
     resume.add_argument("run_id")
@@ -98,13 +119,23 @@ def _task_ids(raw: str) -> tuple[str, ...]:
 
 
 def command_dataset_fetch(args: argparse.Namespace) -> int:
-    path, digest = fetch_humaneval_plus(args.path)
-    print(f"Downloaded HumanEval+ v0.1.10 to {path}")
+    default_path, version, _ = DATASET_DEFAULTS[args.name]
+    target = args.path or default_path
+    if args.name == "humaneval-plus":
+        path, digest = fetch_humaneval_plus(target)
+        label = "HumanEval+"
+    else:
+        path, digest = fetch_bigcodebench_hard(target)
+        label = "BigCodeBench-Hard"
+    print(f"Downloaded {label} {version} to {path}")
     print(f"SHA-256: {digest}")
     return 0
 
 
 def command_doctor(args: argparse.Namespace) -> int:
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
     checks: list[tuple[str, bool, str]] = []
     version_ok = sys.version_info[:2] == (3, 12)
     checks.append(
@@ -115,16 +146,20 @@ def command_doctor(args: argparse.Namespace) -> int:
         )
     )
     try:
-        problems = load_problems(args.dataset_path)
-        dataset_ok = len(problems) == 164
+        problems = load_problems(dataset_path, dataset_name=args.dataset)
+        expected_tasks = 164 if args.dataset == "humaneval-plus" else 148
+        dataset_ok = len(problems) == expected_tasks
         dataset_note = f"{len(problems)} tasks"
     except DatasetError as exc:
         problems = {}
         dataset_ok = False
         dataset_note = str(exc)
-    checks.append(("HumanEval+ v0.1.10", dataset_ok, dataset_note))
+    dataset_label = (
+        "HumanEval+" if args.dataset == "humaneval-plus" else "BigCodeBench-Hard"
+    )
+    checks.append((f"{dataset_label} {version}", dataset_ok, dataset_note))
 
-    docker = docker_status(args.evaluator_image)
+    docker = docker_status(evaluator_image)
     checks.extend(
         [
             ("Docker CLI", docker["cli"], "installed" if docker["cli"] else "missing"),
@@ -136,7 +171,7 @@ def command_doctor(args: argparse.Namespace) -> int:
             (
                 "Evaluator image",
                 docker["image"],
-                args.evaluator_image if docker["image"] else "not built",
+                evaluator_image if docker["image"] else "not built",
             ),
         ]
     )
@@ -182,14 +217,16 @@ def command_doctor(args: argparse.Namespace) -> int:
             assert problems
             config = config_from_environment(
                 strategies=("no-memory",),
-                task_ids=("HumanEval/0",),
-                dataset_path=args.dataset_path,
-                dataset_sha256=file_sha256(args.dataset_path),
+                task_ids=(next(iter(problems)),),
+                dataset_path=dataset_path,
+                dataset_sha256=file_sha256(dataset_path),
+                dataset_name=args.dataset,
+                dataset_version=version,
                 max_attempts=1,
                 concurrency=1,
                 budget_usd=10.0,
             )
-            config = replace(config, evaluator_image=args.evaluator_image)
+            config = replace(config, evaluator_image=evaluator_image)
             response = AzureOpenAIProvider(config).generate(
                 "TASK doctor\n\ndef tokenos_doctor():\n    \"\"\"Return True.\"\"\"\n"
             )
@@ -202,19 +239,34 @@ def command_doctor(args: argparse.Namespace) -> int:
 
 
 def command_benchmark(args: argparse.Namespace) -> int:
-    problems = load_problems(args.dataset_path)
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
     task_ids = sorted_task_ids(problems) if args.all else _task_ids(args.task_ids)
     selected = select_problems(problems, task_ids)
+    if args.dataset == "bigcodebench-hard" and evaluator_image == default_image:
+        unsupported = [problem.task_id for problem in selected if not is_stdlib_problem(problem)]
+        if unsupported:
+            preview = ", ".join(unsupported[:5])
+            suffix = "..." if len(unsupported) > 5 else ""
+            raise DatasetError(
+                "the default BigCodeBench smoke evaluator supports stdlib-only tasks; "
+                f"unsupported selection: {preview}{suffix}; use an official full "
+                "evaluator image explicitly for the complete suite"
+            )
     config = config_from_environment(
         strategies=_strategies(args.strategies),
         task_ids=task_ids,
-        dataset_path=args.dataset_path,
-        dataset_sha256=file_sha256(args.dataset_path),
+        dataset_path=dataset_path,
+        dataset_sha256=file_sha256(dataset_path),
+        dataset_name=args.dataset,
+        dataset_version=version,
         max_attempts=args.max_attempts,
         concurrency=args.concurrency,
         budget_usd=args.budget_usd,
     )
-    config = replace(config, evaluator_image=args.evaluator_image)
+    config = replace(config, evaluator_image=evaluator_image)
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)
     summary = BenchmarkRunner(
@@ -245,7 +297,9 @@ def command_resume(args: argparse.Namespace) -> int:
                 budget_usd=args.budget_usd,
             )
             config = replace(config, budget_usd=args.budget_usd)
-    problems = load_problems(Path(config.dataset_path))
+    problems = load_problems(
+        Path(config.dataset_path), dataset_name=config.dataset_name
+    )
     if file_sha256(Path(config.dataset_path)) != config.dataset_sha256:
         raise DatasetError("dataset hash no longer matches the run manifest")
     selected = select_problems(problems, config.task_ids)

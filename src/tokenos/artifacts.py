@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -40,8 +41,20 @@ class EventStore:
         return json.loads(self.manifest_path.read_text(encoding="utf-8"))
 
     def validate_config(self, config: RunConfig) -> None:
-        expected = self.read_manifest()["config_fingerprint"]
-        if config.fingerprint() != expected:
+        manifest = self.read_manifest()
+        expected = manifest["config_fingerprint"]
+        if config.fingerprint() == expected:
+            return
+        # Optional config fields added in newer versions must not invalidate an
+        # older immutable manifest. Compare using exactly its recorded keys.
+        current = config.public_dict()
+        legacy = {key: current[key] for key in manifest["config"]}
+        legacy.pop("run_id", None)
+        legacy.pop("created_at", None)
+        encoded = json.dumps(
+            legacy, sort_keys=True, separators=(",", ":")
+        ).encode()
+        if sha256(encoded).hexdigest() != expected:
             raise ArtifactError("resume configuration does not match the run manifest")
 
     def append(self, event_type: str, **payload: Any) -> None:

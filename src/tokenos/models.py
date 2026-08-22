@@ -5,7 +5,9 @@ from hashlib import sha256
 import json
 from typing import Any, Literal
 
-StrategyName = Literal["no-memory", "full-history", "patchsearch"]
+StrategyName = Literal[
+    "no-memory", "full-history", "patchsearch", "patchsearch-explained"
+]
 FailureKind = Literal[
     "wrong_answer",
     "runtime_error",
@@ -22,6 +24,9 @@ class Problem:
     task_id: str
     prompt: str
     entry_point: str
+    benchmark: str = "humaneval-plus"
+    test_code: str | None = None
+    libraries: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,6 +69,7 @@ class Patch:
     source_attempt: int
     failure_kind: FailureKind
     validated: bool = True
+    explanation: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,6 +114,7 @@ class RunConfig:
     strategies: tuple[StrategyName, ...]
     task_ids: tuple[str, ...]
     dataset_path: str
+    dataset_name: str = "humaneval-plus"
     dataset_version: str = "v0.1.10"
     dataset_sha256: str = ""
     model_name: str = "gpt-5.4-mini"

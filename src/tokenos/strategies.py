@@ -62,17 +62,24 @@ def build_prompt(
             )
         else:
             sections.append("There are no previous attempts.")
-    elif strategy == "patchsearch":
+    elif strategy in {"patchsearch", "patchsearch-explained"}:
         selected = list(patches) if patches is not None else retrieve_patches(history)
         if selected:
             sections.append("EXECUTABLE MEMORY")
-            sections.extend(patch.assertion for patch in selected)
+            for patch in selected:
+                if strategy == "patchsearch-explained" and patch.explanation:
+                    sections.append(f"Explanation: {patch.explanation}")
+                    sections.append(f"Constraint: {patch.assertion}")
+                else:
+                    sections.append(patch.assertion)
             sections.append(
                 "Satisfy every executable constraint and produce a complete corrected "
                 "completion, not a patch or explanation."
             )
         else:
-            sections.append("There are no validated patches from previous attempts.")
+            sections.append(
+                "There are no validated patches from previous attempts."
+            )
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
     return "\n\n".join(sections).rstrip() + "\n"

@@ -92,7 +92,8 @@ class BenchmarkRunner:
             return
         next_attempt = max((item.attempt for item in history), default=0) + 1
         for attempt in range(next_attempt, self.config.max_attempts + 1):
-            patches = retrieve_patches(history) if strategy == "patchsearch" else []
+            patch_strategy = strategy in {"patchsearch", "patchsearch-explained"}
+            patches = retrieve_patches(history) if patch_strategy else []
             prompt = build_prompt(
                 strategy,
                 problem,
@@ -186,8 +187,13 @@ class BenchmarkRunner:
                 resolved_model=response.resolved_model,
                 patches=(),
             )
-            if strategy == "patchsearch" and not evaluation.passed:
-                patch = extract_patch(problem, evaluation.feedback, attempt)
+            if patch_strategy and not evaluation.passed:
+                patch = extract_patch(
+                    problem,
+                    evaluation.feedback,
+                    attempt,
+                    include_explanation=strategy == "patchsearch-explained",
+                )
                 if patch is not None:
                     record = replace(record, patches=(patch,))
             with self._records_lock:
