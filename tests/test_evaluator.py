@@ -32,5 +32,6 @@ def test_docker_evaluator_uses_locked_down_container() -> None:
     assert result.feedback is not None
     assert result.feedback.kind == "wrong_answer"
     submitted = json.loads(run.call_args.kwargs["input"])
+    assert submitted["schema_version"] == 2
     assert submitted["entry_point"] == "f"
     assert submitted["test_code"] is None

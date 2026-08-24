@@ -2,8 +2,11 @@
 
 from tokenos.models import (
     AttemptRecord,
+    EvidenceObservation,
     EvaluationResult,
+    FailureEvidence,
     FailureFeedback,
+    FailureMemory,
     ModelUsage,
     Patch,
     Problem,
@@ -12,8 +15,11 @@ from tokenos.models import (
 
 __all__ = [
     "AttemptRecord",
+    "EvidenceObservation",
     "EvaluationResult",
+    "FailureEvidence",
     "FailureFeedback",
+    "FailureMemory",
     "ModelUsage",
     "Patch",
     "Problem",

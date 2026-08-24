@@ -30,13 +30,25 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
         return {
             "kind": "timeout",
             "message": "candidate exceeded the BigCodeBench task time limit",
+            "observations": [{"kind": "timeout", "value": "30 seconds"}],
+            "provenance": "bigcodebench-unittest",
         }
+    test_id = next(iter(details), None)
+    observations: list[dict[str, Any]] = []
+    if test_id:
+        observations.append({"kind": "test_name", "value": test_id})
+    if combined:
+        observations.append({"kind": "traceback", "value": sanitize_message(combined)})
     syntax = re.search(r"(SyntaxError|IndentationError):\s*([^\n]+)", combined)
     if syntax:
         return {
             "kind": "syntax_error",
             "message": sanitize_message(syntax.group(2)),
-            "exception_type": syntax.group(1),
+            "observations": observations + [
+                {"kind": "exception", "value": syntax.group(1)}
+            ],
+            "test_id": test_id,
+            "provenance": "bigcodebench-unittest",
         }
     assertion = re.search(r"AssertionError(?::\s*([^\n]+))?", combined)
     if assertion:
@@ -44,9 +56,12 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
         feedback: dict[str, Any] = {
             "kind": "wrong_answer",
             "message": message,
+            "observations": observations,
+            "test_id": test_id,
+            "provenance": "bigcodebench-unittest",
         }
         if actual:
-            feedback["actual_repr"] = actual
+            feedback["observations"].append({"kind": "actual_value", "value": actual})
         return feedback
     exception = re.findall(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):\s*(.*)$", combined, re.M)
     if exception:
@@ -54,9 +69,20 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
         return {
             "kind": "runtime_error",
             "message": sanitize_message(exception_message),
-            "exception_type": exception_type.rsplit(".", 1)[-1],
+            "observations": observations + [{
+                "kind": "exception",
+                "value": exception_type.rsplit(".", 1)[-1],
+            }],
+            "test_id": test_id,
+            "provenance": "bigcodebench-unittest",
         }
-    return {"kind": "runtime_error", "message": message}
+    return {
+        "kind": "runtime_error",
+        "message": message,
+        "observations": observations,
+        "test_id": test_id,
+        "provenance": "bigcodebench-unittest",
+    }
 
 
 def test_worker(
@@ -122,13 +148,14 @@ def evaluate(job: dict[str, Any]) -> dict[str, Any]:
         feedback = {
             "kind": "syntax_error",
             "message": sanitize_message(f"{exc.msg} at line {exc.lineno}"),
-            "exception_type": "SyntaxError",
+            "observations": [{"kind": "exception", "value": "SyntaxError"}],
+            "provenance": "bigcodebench-unittest",
         }
         return {
             "base_status": "fail",
             "plus_status": "fail",
             "passed": False,
-            "feedback": feedback,
+            "evidence": feedback,
         }
     status, details = run_tests(solution, test_code)
     passed = status == "pass"
@@ -136,7 +163,7 @@ def evaluate(job: dict[str, Any]) -> dict[str, Any]:
         "base_status": status,
         "plus_status": status,
         "passed": passed,
-        "feedback": None if passed else failure_feedback(status, details),
+        "evidence": None if passed else failure_feedback(status, details),
     }
 
 

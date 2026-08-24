@@ -1,7 +1,7 @@
 # TokenOS
 
 TokenOS is an experimental context-management runtime for coding agents. Phase 2
-adds PatchSearch to the reproducible benchmark harness, which now compares three
+adds PatchSearch to the reproducible benchmark harness, which compares four
 retry strategies:
 
 - **No Memory:** each attempt receives only the original problem.
@@ -145,11 +145,26 @@ tokenos benchmark \
   --concurrency 2
 ```
 
-BigCodeBench exposes bounded unittest traces rather than HumanEval+'s direct
-oracle `(input, expected)` counterexamples. Those traces help Full History, but
-PatchSearch intentionally rejects them unless a safe executable constraint can
-be recovered; this prevents the harder benchmark from inflating memory counts
-with guessed or malformed patches.
+BigCodeBench exposes bounded unittest evidence rather than HumanEval+'s direct
+oracle `(input, expected)` counterexamples. PatchSearch stores those failures as
+typed summaries. It emits executable assertions only when an evaluator provides
+trusted, complete literal call and expected-value observations.
+
+## Failure Evidence Protocol
+
+Evaluator output is normalized through the public `BenchmarkAdapter` protocol.
+An adapter builds the sandbox job and converts its result into versioned,
+benchmark-neutral `FailureEvidence` containing bounded typed observations. New
+Python benchmarks register an adapter by name with
+`register_benchmark_adapter`; core extraction does not branch on benchmark names.
+
+Every non-infrastructure failure produces one `FailureMemory`. Safe oracle
+evidence becomes an `executable_constraint`; unittest, stdin/stdout, property,
+stateful, exception-only, truncated, and hidden-test diagnostics fall back to a
+bounded `failure_summary`. Evaluator text is sanitized before persistence, and
+assertions are checked with Python's AST and literal parser without executing
+candidate code on the host. New artifacts use schema v2; v1 feedback and patches
+remain readable and resumable.
 
 If the hard spend cap or an infrastructure error stops a run, its artifacts stay
 resumable:
@@ -180,7 +195,9 @@ Adaptive retries are reported as `solve@1`, `solve@3`, and `solve@5`. These are
 cumulative solve rates, not the classical independent-sampling `pass@k` estimator.
 A task succeeds only when both HumanEval base and HumanEval+ tests pass.
 
-PatchSearch summaries also report `patches_generated` and `patches_retrieved`.
+PatchSearch summaries report evidence, executable-constraint, summary-fallback,
+retrieval, retry-success, and memory-token metrics. The legacy
+`patches_generated` and `patches_retrieved` fields remain available.
 Explained PatchSearch additionally reports explanation generation, retrieval,
 retry success, and token-use metrics.
 Validated patches are stored in the append-only attempt records, so interrupted

@@ -17,6 +17,19 @@ FailureKind = Literal[
     "invalid_output",
     "infrastructure_error",
 ]
+EvidenceObservationKind = Literal[
+    "function_call",
+    "expected_value",
+    "actual_value",
+    "exception",
+    "timeout",
+    "stdout_mismatch",
+    "stderr",
+    "property",
+    "test_name",
+    "traceback",
+]
+MemoryKind = Literal["executable_constraint", "failure_summary"]
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,13 +55,31 @@ class ModelUsage:
 
 
 @dataclass(frozen=True, slots=True)
-class FailureFeedback:
+class EvidenceObservation:
+    kind: EvidenceObservationKind
+    value: str
+    trusted: bool = False
+    truncated: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class FailureEvidence:
     kind: FailureKind
     message: str
+    benchmark: str = ""
+    test_id: str | None = None
+    observations: tuple[EvidenceObservation, ...] = ()
+    provenance: str = "evaluator"
+    truncated: bool = False
+    # Legacy v1 fields. Adapters translate these into typed observations.
     input_repr: str | None = None
     expected_repr: str | None = None
     actual_repr: str | None = None
     exception_type: str | None = None
+
+
+# Source compatibility for callers that constructed v1 feedback directly.
+FailureFeedback = FailureEvidence
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,7 +87,27 @@ class EvaluationResult:
     base_status: str
     plus_status: str
     passed: bool
-    feedback: FailureFeedback | None = None
+    feedback: FailureEvidence | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class FailureMemory:
+    """A bounded, benchmark-neutral memory derived from failure evidence."""
+
+    task_id: str
+    kind: MemoryKind
+    content: str
+    source_attempt: int
+    failure_kind: FailureKind
+    fingerprint: str
+    validated: bool = True
+    provenance: str = "evaluator"
+    explanation: str | None = None
+
+    @property
+    def assertion(self) -> str:
+        """Compatibility accessor for code that previously consumed Patch."""
+        return self.content
 
 
 @dataclass(frozen=True, slots=True)
@@ -92,19 +143,58 @@ class AttemptRecord:
     created_at: str
     resolved_model: str | None = None
     patches: tuple[Patch, ...] = ()
+    memories: tuple[FailureMemory, ...] = ()
+    retrieved_memories: tuple[FailureMemory, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
-        return asdict(self)
+        data = asdict(self)
+        evaluation = data["evaluation"]
+        feedback = evaluation.pop("feedback", None)
+        if feedback is not None:
+            for legacy_field in (
+                "input_repr", "expected_repr", "actual_repr", "exception_type"
+            ):
+                feedback.pop(legacy_field, None)
+            evaluation["evidence"] = feedback
+        return data
 
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "AttemptRecord":
         values = dict(data)
         values["usage"] = ModelUsage(**values["usage"])
         evaluation = dict(values["evaluation"])
-        if evaluation.get("feedback") is not None:
-            evaluation["feedback"] = FailureFeedback(**evaluation["feedback"])
+        raw_evidence = evaluation.pop("evidence", evaluation.get("feedback"))
+        evaluation.pop("feedback", None)
+        if raw_evidence is not None:
+            feedback = dict(raw_evidence)
+            feedback["observations"] = tuple(
+                EvidenceObservation(**item)
+                for item in feedback.get("observations", ())
+            )
+            evaluation["feedback"] = FailureEvidence(**feedback)
         values["evaluation"] = EvaluationResult(**evaluation)
         values["patches"] = tuple(Patch(**item) for item in values.get("patches", ()))
+        values["memories"] = tuple(
+            FailureMemory(**item) for item in values.get("memories", ())
+        )
+        values["retrieved_memories"] = tuple(
+            FailureMemory(**item) for item in values.get("retrieved_memories", ())
+        )
+        if not values["memories"] and values["patches"]:
+            values["memories"] = tuple(
+                FailureMemory(
+                    task_id=patch.task_id,
+                    kind="executable_constraint",
+                    content=patch.assertion,
+                    source_attempt=patch.source_attempt,
+                    failure_kind=patch.failure_kind,
+                    fingerprint=sha256(patch.assertion.encode()).hexdigest(),
+                    validated=patch.validated,
+                    provenance="legacy-v1",
+                    explanation=patch.explanation,
+                )
+                for patch in values["patches"]
+            )
         return cls(**values)
 
 

@@ -31,7 +31,7 @@ class EventStore:
 
     def write_manifest(self, config: RunConfig) -> None:
         payload = {
-            "schema_version": 1,
+            "schema_version": 2,
             "config_fingerprint": config.fingerprint(),
             "config": config.public_dict(),
         }
@@ -58,7 +58,7 @@ class EventStore:
             raise ArtifactError("resume configuration does not match the run manifest")
 
     def append(self, event_type: str, **payload: Any) -> None:
-        event = {"type": event_type, "timestamp": utc_now(), **payload}
+        event = {"schema_version": 2, "type": event_type, "timestamp": utc_now(), **payload}
         line = json.dumps(event, default=to_jsonable, sort_keys=True) + "\n"
         with self._lock:
             with self.events_path.open("a", encoding="utf-8") as handle:

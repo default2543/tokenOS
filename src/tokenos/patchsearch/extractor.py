@@ -1,67 +1,135 @@
 from __future__ import annotations
 
-from tokenos.models import FailureFeedback, Patch, Problem
-from tokenos.patchsearch.validator import validate_patch
+from hashlib import sha256
+
+from tokenos.models import FailureEvidence, FailureMemory, Patch, Problem
+from tokenos.patchsearch.validator import validate_memory
 
 PATCHABLE_FAILURE_KINDS = {"wrong_answer", "runtime_error", "timeout"}
 MAX_EXPLANATION_CHARS = 200
+MAX_MEMORY_CHARS = 600
 
 
 def _one_line(value: str) -> str:
     return " ".join(value.split())
 
 
-def _bounded(value: str) -> str:
+def _bounded(value: str, limit: int = MAX_EXPLANATION_CHARS) -> str:
     normalized = _one_line(value)
-    if len(normalized) <= MAX_EXPLANATION_CHARS:
+    if len(normalized) <= limit:
         return normalized
-    return normalized[: MAX_EXPLANATION_CHARS - 3].rstrip() + "..."
+    return normalized[: limit - 3].rstrip() + "..."
 
 
-def explain_failure(feedback: FailureFeedback) -> str:
+def _observation(evidence: FailureEvidence, kind: str) -> tuple[str, bool, bool] | None:
+    for item in evidence.observations:
+        if item.kind == kind:
+            return item.value, item.trusted, item.truncated
+    legacy = {
+        "function_call": evidence.input_repr,
+        "expected_value": evidence.expected_repr,
+        "actual_value": evidence.actual_repr,
+        "exception": evidence.exception_type,
+    }.get(kind)
+    if legacy is not None:
+        return legacy, kind in {"function_call", "expected_value"}, "<truncated>" in legacy
+    return None
+
+
+def explain_failure(evidence: FailureEvidence) -> str:
     """Render a deterministic, bounded explanation without another model call."""
-    if feedback.kind == "wrong_answer":
-        if feedback.actual_repr is None:
+    actual = _observation(evidence, "actual_value")
+    exception = _observation(evidence, "exception")
+    if evidence.kind == "wrong_answer":
+        if actual is None:
             return "Previous candidate produced an incorrect result."
-        return _bounded(f"Previous candidate returned {feedback.actual_repr}.")
-    if feedback.kind == "runtime_error":
-        exception = _one_line(feedback.exception_type or "an exception")
-        message = _one_line(feedback.message)
+        return _bounded(f"Previous candidate returned {actual[0]}.")
+    if evidence.kind == "runtime_error":
+        exception_name = _one_line(exception[0] if exception else "an exception")
+        message = _one_line(evidence.message)
         if message:
-            return _bounded(f"Previous candidate raised {exception}: {message}.")
-        return _bounded(f"Previous candidate raised {exception}.")
-    if feedback.kind == "timeout":
+            return _bounded(f"Previous candidate raised {exception_name}: {message}.")
+        return _bounded(f"Previous candidate raised {exception_name}.")
+    if evidence.kind == "timeout":
         return "Previous candidate did not terminate on this input."
-    raise ValueError(f"Cannot explain ineligible failure kind: {feedback.kind}")
+    if evidence.kind == "syntax_error":
+        return _bounded(f"Previous candidate had invalid Python syntax: {evidence.message}.")
+    if evidence.kind == "missing_entry_point":
+        return _bounded(f"Previous candidate omitted the required callable: {evidence.message}.")
+    if evidence.kind == "invalid_output":
+        return _bounded(f"Previous model response was invalid: {evidence.message}.")
+    return _bounded(f"Previous candidate failed: {evidence.message}.")
+
+
+def _fingerprint(kind: str, content: str) -> str:
+    return sha256(f"{kind}\0{content}".encode()).hexdigest()
+
+
+def extract_memory(
+    problem: Problem,
+    evidence: FailureEvidence | None,
+    source_attempt: int,
+    *,
+    include_explanation: bool = False,
+) -> FailureMemory | None:
+    """Create a safe executable constraint or a bounded typed summary."""
+    if evidence is None or evidence.kind == "infrastructure_error":
+        return None
+    call = _observation(evidence, "function_call")
+    expected = _observation(evidence, "expected_value")
+    if (
+        evidence.kind in PATCHABLE_FAILURE_KINDS
+        and call is not None
+        and expected is not None
+        and call[1] and expected[1]
+        and not call[2] and not expected[2]
+        and not evidence.truncated
+    ):
+        assertion = f"assert {problem.entry_point}(*{call[0]}) == {expected[0]}"
+        memory = FailureMemory(
+            task_id=problem.task_id,
+            kind="executable_constraint",
+            content=assertion,
+            source_attempt=source_attempt,
+            failure_kind=evidence.kind,
+            fingerprint=_fingerprint("executable_constraint", assertion),
+            provenance=evidence.provenance,
+            explanation=explain_failure(evidence) if include_explanation else None,
+        )
+        if validate_memory(memory, evidence, problem.entry_point):
+            return memory
+    label = evidence.kind.replace("_", " ").upper()
+    details = explain_failure(evidence)
+    test = f" Test: {evidence.test_id}." if evidence.test_id else ""
+    content = _bounded(f"{label}: {details}{test}", MAX_MEMORY_CHARS)
+    return FailureMemory(
+        task_id=problem.task_id,
+        kind="failure_summary",
+        content=content,
+        source_attempt=source_attempt,
+        failure_kind=evidence.kind,
+        fingerprint=_fingerprint("failure_summary", content),
+        provenance=evidence.provenance,
+    )
 
 
 def extract_patch(
     problem: Problem,
-    feedback: FailureFeedback | None,
+    feedback: FailureEvidence | None,
     source_attempt: int,
     *,
     include_explanation: bool = False,
 ) -> Patch | None:
-    """Convert an oracle counterexample into a small executable assertion."""
-    if (
-        feedback is None
-        or feedback.kind not in PATCHABLE_FAILURE_KINDS
-        or feedback.input_repr is None
-        or feedback.expected_repr is None
-    ):
+    """Legacy v1 wrapper returning only executable memories as Patch objects."""
+    memory = extract_memory(problem, feedback, source_attempt, include_explanation=include_explanation)
+    if memory is None or memory.kind != "executable_constraint":
         return None
-    if "<truncated>" in feedback.input_repr or "<truncated>" in feedback.expected_repr:
-        return None
-    assertion = (
-        f"assert {problem.entry_point}(*{feedback.input_repr}) == "
-        f"{feedback.expected_repr}"
-    )
-    patch = Patch(
-        task_id=problem.task_id,
+    return Patch(
+        task_id=memory.task_id,
         entry_point=problem.entry_point,
-        assertion=assertion,
-        source_attempt=source_attempt,
-        failure_kind=feedback.kind,
-        explanation=explain_failure(feedback) if include_explanation else None,
+        assertion=memory.content,
+        source_attempt=memory.source_attempt,
+        failure_kind=memory.failure_kind,
+        validated=memory.validated,
+        explanation=memory.explanation,
     )
-    return patch if validate_patch(patch, feedback) else None

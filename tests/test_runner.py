@@ -22,7 +22,7 @@ class FakeProvider:
         with self.lock:
             self.prompts.append(prompt)
         value = "True" if (
-            "PREVIOUS ATTEMPTS" in prompt or "EXECUTABLE MEMORY" in prompt
+            "PREVIOUS ATTEMPTS" in prompt or "FAILURE MEMORY" in prompt
         ) else "False"
         return ModelResponse(
             output_text='{"completion":"    return ' + value + '"}',
@@ -153,7 +153,7 @@ def test_patchsearch_stores_and_retrieves_counterexample(tmp_path: Path) -> None
     provider = FakeProvider()
     summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
     records = store.completed_attempts()
-    assert records[0].patches[0].assertion == "assert f(*()) == True"
+    assert records[0].memories[0].content == "assert f(*()) == True"
     assert "assert f(*()) == True" in provider.prompts[1]
     assert summary["strategies"]["patchsearch"]["solved_tasks"] == 1
     assert summary["strategies"]["patchsearch"]["patches_generated"] == 1
@@ -183,7 +183,7 @@ def test_explained_patchsearch_is_persistent_and_measured(tmp_path: Path) -> Non
     provider = FakeProvider()
     summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
     records = store.completed_attempts()
-    assert records[0].patches[0].explanation == (
+    assert records[0].memories[0].explanation == (
         "Previous candidate returned False."
     )
     assert "Explanation: Previous candidate returned False." in provider.prompts[1]

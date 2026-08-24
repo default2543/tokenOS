@@ -3,8 +3,15 @@ from __future__ import annotations
 import json
 from typing import Sequence
 
-from tokenos.models import AttemptRecord, FailureFeedback, Patch, Problem, StrategyName
-from tokenos.patchsearch.retriever import retrieve_patches
+from tokenos.models import (
+    AttemptRecord,
+    FailureFeedback,
+    FailureMemory,
+    Patch,
+    Problem,
+    StrategyName,
+)
+from tokenos.patchsearch.retriever import retrieve_memories
 
 SYSTEM_INSTRUCTIONS = """You solve standalone Python function-completion tasks.
 Return a JSON object with exactly one field named completion. Its value must be the
@@ -25,6 +32,18 @@ def _feedback_text(feedback: FailureFeedback | None) -> str:
         lines.append(f"Actual: {feedback.actual_repr}")
     if feedback.exception_type is not None:
         lines.append(f"Exception: {feedback.exception_type}")
+    if feedback.test_id is not None:
+        lines.append(f"Test: {feedback.test_id}")
+    labels = {
+        "stdout_mismatch": "Output mismatch",
+        "stderr": "Standard error",
+        "property": "Failed property",
+        "traceback": "Traceback",
+        "timeout": "Timeout",
+    }
+    for observation in feedback.observations:
+        if observation.kind in labels:
+            lines.append(f"{labels[observation.kind]}: {observation.value}")
     return "\n".join(lines)
 
 
@@ -35,6 +54,7 @@ def build_prompt(
     history: Sequence[AttemptRecord],
     max_attempts: int = 5,
     patches: Sequence[Patch] | None = None,
+    memories: Sequence[FailureMemory] | None = None,
 ) -> str:
     sections = [
         f"TASK {problem.task_id}",
@@ -63,23 +83,41 @@ def build_prompt(
         else:
             sections.append("There are no previous attempts.")
     elif strategy in {"patchsearch", "patchsearch-explained"}:
-        selected = list(patches) if patches is not None else retrieve_patches(history)
+        if memories is not None:
+            selected = list(memories)
+        elif patches is not None:
+            selected = [
+                FailureMemory(
+                    task_id=patch.task_id,
+                    kind="executable_constraint",
+                    content=patch.assertion,
+                    source_attempt=patch.source_attempt,
+                    failure_kind=patch.failure_kind,
+                    fingerprint=patch.assertion,
+                    validated=patch.validated,
+                    provenance="legacy-v1",
+                    explanation=patch.explanation,
+                )
+                for patch in patches
+            ]
+        else:
+            selected = retrieve_memories(history)
         if selected:
-            sections.append("EXECUTABLE MEMORY")
-            for patch in selected:
-                if strategy == "patchsearch-explained" and patch.explanation:
-                    sections.append(f"Explanation: {patch.explanation}")
-                    sections.append(f"Constraint: {patch.assertion}")
+            sections.append("FAILURE MEMORY")
+            for memory in selected:
+                if memory.kind == "executable_constraint":
+                    if strategy == "patchsearch-explained" and memory.explanation:
+                        sections.append(f"Explanation: {memory.explanation}")
+                    sections.append(f"Constraint: {memory.content}")
                 else:
-                    sections.append(patch.assertion)
+                    sections.append(f"Summary: {memory.content}")
             sections.append(
-                "Satisfy every executable constraint and produce a complete corrected "
-                "completion, not a patch or explanation."
+                "Use this bounded failure memory to produce a complete corrected "
+                "completion, not a patch or explanation. Satisfy every executable "
+                "constraint."
             )
         else:
-            sections.append(
-                "There are no validated patches from previous attempts."
-            )
+            sections.append("There is no validated failure memory from previous attempts.")
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
     return "\n\n".join(sections).rstrip() + "\n"

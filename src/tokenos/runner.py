@@ -20,8 +20,8 @@ from tokenos.models import (
     StrategyName,
 )
 from tokenos.provider import ModelProviderError, ModelResponse
-from tokenos.patchsearch.extractor import extract_patch
-from tokenos.patchsearch.retriever import retrieve_patches
+from tokenos.patchsearch.extractor import extract_memory
+from tokenos.patchsearch.retriever import retrieve_memories
 from tokenos.strategies import build_prompt, parse_completion
 
 
@@ -93,14 +93,14 @@ class BenchmarkRunner:
         next_attempt = max((item.attempt for item in history), default=0) + 1
         for attempt in range(next_attempt, self.config.max_attempts + 1):
             patch_strategy = strategy in {"patchsearch", "patchsearch-explained"}
-            patches = retrieve_patches(history) if patch_strategy else []
+            memories = retrieve_memories(history) if patch_strategy else []
             prompt = build_prompt(
                 strategy,
                 problem,
                 attempt,
                 history,
                 max_attempts=self.config.max_attempts,
-                patches=patches,
+                memories=memories,
             )
             reservation = self.budget.acquire(prompt)
             if reservation is None:
@@ -150,7 +150,10 @@ class BenchmarkRunner:
                     plus_status="fail",
                     passed=False,
                     feedback=FailureFeedback(
-                        kind="invalid_output", message=str(exc)
+                        kind="invalid_output",
+                        message=str(exc),
+                        benchmark=problem.benchmark,
+                        provenance="tokenos-response-parser",
                     ),
                 )
             except Exception as exc:
@@ -186,16 +189,18 @@ class BenchmarkRunner:
                 created_at=utc_now(),
                 resolved_model=response.resolved_model,
                 patches=(),
+                memories=(),
+                retrieved_memories=tuple(memories),
             )
             if patch_strategy and not evaluation.passed:
-                patch = extract_patch(
+                memory = extract_memory(
                     problem,
                     evaluation.feedback,
                     attempt,
                     include_explanation=strategy == "patchsearch-explained",
                 )
-                if patch is not None:
-                    record = replace(record, patches=(patch,))
+                if memory is not None:
+                    record = replace(record, memories=(memory,))
             with self._records_lock:
                 self._records.append(record)
             self.store.append("attempt_completed", record=record.to_dict())

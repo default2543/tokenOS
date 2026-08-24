@@ -1,5 +1,6 @@
 from tokenos.models import (
     AttemptRecord,
+    EvidenceObservation,
     EvaluationResult,
     FailureFeedback,
     ModelUsage,
@@ -9,8 +10,9 @@ from tokenos.patchsearch.extractor import (
     MAX_EXPLANATION_CHARS,
     explain_failure,
     extract_patch,
+    extract_memory,
 )
-from tokenos.patchsearch.retriever import retrieve_patches
+from tokenos.patchsearch.retriever import retrieve_memories, retrieve_patches
 from tokenos.strategies import build_prompt
 
 
@@ -175,3 +177,50 @@ def test_old_patch_artifact_without_explanation_is_readable() -> None:
     payload["patches"][0].pop("explanation")
     restored = AttemptRecord.from_dict(payload)
     assert restored.patches[0].explanation is None
+    assert restored.memories[0].kind == "executable_constraint"
+
+
+def test_non_oracle_failure_always_becomes_bounded_summary() -> None:
+    problem = Problem("BigCodeBench/1", "def answer():\n", "answer", benchmark="bigcodebench-hard")
+    evidence = FailureFeedback(
+        kind="runtime_error",
+        message="bad value " * 200,
+        benchmark="bigcodebench-hard",
+        test_id="test_bad_value",
+        observations=(EvidenceObservation("exception", "ValueError"),),
+    )
+    memory = extract_memory(problem, evidence, 1)
+    assert memory is not None
+    assert memory.kind == "failure_summary"
+    assert len(memory.content) <= 600
+    assert "test_bad_value" in memory.content
+
+
+def test_untrusted_or_malicious_call_evidence_cannot_become_executable() -> None:
+    evidence = FailureFeedback(
+        kind="wrong_answer",
+        message="mismatch",
+        observations=(
+            EvidenceObservation("function_call", "(__import__('os').system('id'),)", True),
+            EvidenceObservation("expected_value", "0", True),
+        ),
+    )
+    memory = extract_memory(PROBLEM, evidence, 1)
+    assert memory is not None
+    assert memory.kind == "failure_summary"
+    assert "__import__" not in memory.content
+
+
+def test_retrieval_prefers_constraints_and_obeys_total_budget() -> None:
+    records = []
+    for number in range(1, 9):
+        evidence = FailureFeedback(kind="runtime_error", message="x" * 500)
+        memory = extract_memory(PROBLEM, evidence, number)
+        assert memory is not None
+        record = _attempt(number)
+        records.append(record.__class__(**{**record.to_dict(), "usage": record.usage,
+            "evaluation": record.evaluation, "patches": (), "memories": (memory,),
+            "retrieved_memories": ()}))
+    selected = retrieve_memories(records, max_chars=1000)
+    assert sum(len(item.content) for item in selected) <= 1000
+    assert len({item.fingerprint for item in selected}) == len(selected)
