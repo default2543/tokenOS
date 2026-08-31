@@ -224,3 +224,63 @@ def test_retrieval_prefers_constraints_and_obeys_total_budget() -> None:
     selected = retrieve_memories(records, max_chars=1000)
     assert sum(len(item.content) for item in selected) <= 1000
     assert len({item.fingerprint for item in selected}) == len(selected)
+
+
+def test_assertion_diff_is_not_reported_as_a_returned_value() -> None:
+    problem = Problem(
+        "BigCodeBench/13", "def task_func(server):\n", "task_func", "bigcodebench-hard"
+    )
+    diff = "'a to FTP server' != 'a to FTP server invalid_server: a to FTP server'"
+    evidence = FailureFeedback(
+        kind="wrong_answer",
+        message="unittest failure",
+        benchmark="bigcodebench-hard",
+        test_id="test_case_2",
+        observations=(EvidenceObservation("assertion_diff", diff),),
+    )
+    memory = extract_memory(problem, evidence, 1)
+    assert memory is not None
+    assert memory.kind == "failure_summary"
+    assert "failed an assertion" in memory.content
+    assert "returned" not in memory.content
+    assert diff in memory.content
+
+
+def test_assertion_diff_never_becomes_an_executable_constraint() -> None:
+    evidence = FailureFeedback(
+        kind="wrong_answer",
+        message="unittest failure",
+        observations=(
+            EvidenceObservation("assertion_diff", "0 != 42"),
+            EvidenceObservation("test_name", "test_case_1"),
+        ),
+    )
+    memory = extract_memory(PROBLEM, evidence, 1)
+    assert memory is not None
+    assert memory.kind == "failure_summary"
+    assert extract_patch(PROBLEM, evidence, 1) is None
+
+
+def test_summary_fallback_may_use_the_full_memory_budget() -> None:
+    # The one-line explanation bound is for captions; a summary fallback is the
+    # only evidence a summary-only benchmark provides.
+    evidence = FailureFeedback(
+        kind="wrong_answer",
+        message="unittest failure",
+        observations=(EvidenceObservation("assertion_diff", "x" * 900),),
+    )
+    memory = extract_memory(PROBLEM, evidence, 1)
+    assert memory is not None
+    assert MAX_EXPLANATION_CHARS < len(memory.content) <= 600
+
+
+def test_actual_value_still_wins_over_an_assertion_diff() -> None:
+    evidence = FailureFeedback(
+        kind="wrong_answer",
+        message="mismatch",
+        observations=(
+            EvidenceObservation("actual_value", "0"),
+            EvidenceObservation("assertion_diff", "0 != 42"),
+        ),
+    )
+    assert explain_failure(evidence) == "Previous candidate returned 0."

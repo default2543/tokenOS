@@ -15,6 +15,7 @@ _OBSERVATION_KINDS = {
     "function_call",
     "expected_value",
     "actual_value",
+    "assertion_diff",
     "exception",
     "timeout",
     "stdout_mismatch",

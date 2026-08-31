@@ -36,29 +36,44 @@ def _observation(evidence: FailureEvidence, kind: str) -> tuple[str, bool, bool]
     return None
 
 
-def explain_failure(evidence: FailureEvidence) -> str:
+def explain_failure(
+    evidence: FailureEvidence, *, limit: int = MAX_EXPLANATION_CHARS
+) -> str:
     """Render a deterministic, bounded explanation without another model call."""
     actual = _observation(evidence, "actual_value")
+    diff = _observation(evidence, "assertion_diff")
     exception = _observation(evidence, "exception")
     if evidence.kind == "wrong_answer":
-        if actual is None:
-            return "Previous candidate produced an incorrect result."
-        return _bounded(f"Previous candidate returned {actual[0]}.")
+        if actual is not None:
+            return _bounded(f"Previous candidate returned {actual[0]}.", limit)
+        # An assertion diff compares two values; it is not a returned value.
+        if diff is not None:
+            return _bounded(
+                f"Previous candidate failed an assertion: {diff[0]}.", limit
+            )
+        return "Previous candidate produced an incorrect result."
     if evidence.kind == "runtime_error":
         exception_name = _one_line(exception[0] if exception else "an exception")
         message = _one_line(evidence.message)
         if message:
-            return _bounded(f"Previous candidate raised {exception_name}: {message}.")
-        return _bounded(f"Previous candidate raised {exception_name}.")
+            return _bounded(
+                f"Previous candidate raised {exception_name}: {message}.", limit
+            )
+        return _bounded(f"Previous candidate raised {exception_name}.", limit)
     if evidence.kind == "timeout":
         return "Previous candidate did not terminate on this input."
     if evidence.kind == "syntax_error":
-        return _bounded(f"Previous candidate had invalid Python syntax: {evidence.message}.")
+        return _bounded(
+            f"Previous candidate had invalid Python syntax: {evidence.message}.", limit
+        )
     if evidence.kind == "missing_entry_point":
-        return _bounded(f"Previous candidate omitted the required callable: {evidence.message}.")
+        return _bounded(
+            f"Previous candidate omitted the required callable: {evidence.message}.",
+            limit,
+        )
     if evidence.kind == "invalid_output":
-        return _bounded(f"Previous model response was invalid: {evidence.message}.")
-    return _bounded(f"Previous candidate failed: {evidence.message}.")
+        return _bounded(f"Previous model response was invalid: {evidence.message}.", limit)
+    return _bounded(f"Previous candidate failed: {evidence.message}.", limit)
 
 
 def _fingerprint(kind: str, content: str) -> str:
@@ -99,8 +114,13 @@ def extract_memory(
         if validate_memory(memory, evidence, problem.entry_point):
             return memory
     label = evidence.kind.replace("_", " ").upper()
-    details = explain_failure(evidence)
     test = f" Test: {evidence.test_id}." if evidence.test_id else ""
+    # The one-line explanation budget is for `patchsearch-explained` captions.
+    # A summary fallback is the only evidence the model receives, so it may use
+    # the whole memory budget.
+    details = explain_failure(
+        evidence, limit=MAX_MEMORY_CHARS - len(label) - len(test) - 2
+    )
     content = _bounded(f"{label}: {details}{test}", MAX_MEMORY_CHARS)
     return FailureMemory(
         task_id=problem.task_id,

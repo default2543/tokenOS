@@ -11,9 +11,16 @@ import tempfile
 import traceback
 from typing import Any
 import unittest
+import unittest.util
 
 MAX_MESSAGE = 2000
 TASK_TIMEOUT_SECONDS = 30
+# unittest elides assertion reprs to 80 characters ("Fail[13 chars] to FTP
+# server"), which deletes exactly the region that distinguishes expected from
+# actual. Widen both bounds so failure evidence stays diagnostic, and keep them
+# under MAX_MESSAGE so output stays bounded.
+ASSERTION_REPR_LIMIT = 1000
+ASSERTION_DIFF_LIMIT = 4000
 
 
 def sanitize_message(value: object) -> str:
@@ -34,6 +41,10 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
             "provenance": "bigcodebench-unittest",
         }
     test_id = next(iter(details), None)
+    # Parse the traceback `test_id` names, not the concatenation of every
+    # failing test: a multi-line assertion diff would otherwise run on into the
+    # next test's traceback and describe the wrong failure.
+    primary = details.get(test_id, combined) if test_id else combined
     observations: list[dict[str, Any]] = []
     if test_id:
         observations.append({"kind": "test_name", "value": test_id})
@@ -50,9 +61,12 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
             "test_id": test_id,
             "provenance": "bigcodebench-unittest",
         }
-    assertion = re.search(r"AssertionError(?::\s*([^\n]+))?", combined)
+    assertion = re.search(r"AssertionError:?[ \t]*(.*)\Z", primary, re.S)
     if assertion:
-        actual = sanitize_message(assertion.group(1)) if assertion.group(1) else None
+        # A unittest assertion message is a comparison, not a returned value.
+        # Recording it as `actual_value` made downstream memory claim the
+        # candidate "returned" the whole diff, so it gets its own kind.
+        diff = sanitize_message(assertion.group(1)) if assertion.group(1).strip() else None
         feedback: dict[str, Any] = {
             "kind": "wrong_answer",
             "message": message,
@@ -60,8 +74,8 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
             "test_id": test_id,
             "provenance": "bigcodebench-unittest",
         }
-        if actual:
-            feedback["observations"].append({"kind": "actual_value", "value": actual})
+        if diff:
+            feedback["observations"].append({"kind": "assertion_diff", "value": diff})
         return feedback
     exception = re.findall(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):\s*(.*)$", combined, re.M)
     if exception:
@@ -89,6 +103,13 @@ def test_worker(
     solution: str, test_code: str, connection: multiprocessing.connection.Connection
 ) -> None:
     namespace: dict[str, Any] = {"__name__": "__test__"}
+    # redirect_stdout only swaps sys.stdout. A candidate that shells out writes
+    # to file descriptor 1 directly, which is the pipe carrying this
+    # evaluator's result JSON. Detach the child's fds 1 and 2 entirely; results
+    # travel over `connection`, and subprocess capture uses its own pipes.
+    devnull = os.open(os.devnull, os.O_WRONLY)
+    os.dup2(devnull, 1)
+    os.dup2(devnull, 2)
     try:
         with tempfile.TemporaryDirectory() as directory:
             os.chdir(directory)
@@ -99,6 +120,8 @@ def test_worker(
                 test_cases = namespace.get("TestCases")
                 if not isinstance(test_cases, type):
                     raise RuntimeError("test code did not define TestCases")
+                unittest.util._MAX_LENGTH = ASSERTION_REPR_LIMIT
+                test_cases.maxDiff = ASSERTION_DIFF_LIMIT
                 suite = unittest.TestLoader().loadTestsFromTestCase(test_cases)
                 result = unittest.TestResult()
                 suite.run(result)
@@ -122,7 +145,14 @@ def run_tests(solution: str, test_code: str) -> tuple[str, dict[str, str]]:
     sender.close()
     try:
         if receiver.poll(TASK_TIMEOUT_SECONDS):
-            return receiver.recv()
+            # At EOF poll() reports readable, so a worker killed before it
+            # answered (OOM, hard crash) surfaces here rather than as EOFError.
+            try:
+                return receiver.recv()
+            except EOFError:
+                return "fail", {
+                    "ALL": "evaluator worker exited without reporting a result"
+                }
         return "timeout", {}
     finally:
         if process.is_alive():
