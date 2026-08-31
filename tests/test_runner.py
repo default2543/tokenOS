@@ -11,16 +11,19 @@ from tokenos.models import (
 )
 from tokenos.provider import ModelResponse
 from tokenos.runner import BenchmarkRunner
+from tokenos.strategies import SYSTEM_INSTRUCTIONS, system_instructions
 
 
 class FakeProvider:
     def __init__(self) -> None:
         self.prompts = []
+        self.instructions = []
         self.lock = Lock()
 
-    def generate(self, prompt: str) -> ModelResponse:
+    def generate(self, prompt: str, *, instructions: str | None = None) -> ModelResponse:
         with self.lock:
             self.prompts.append(prompt)
+            self.instructions.append(instructions)
         value = "True" if (
             "PREVIOUS ATTEMPTS" in prompt or "FAILURE MEMORY" in prompt
         ) else "False"
@@ -197,3 +200,45 @@ def test_explained_patchsearch_is_persistent_and_measured(tmp_path: Path) -> Non
     assert metrics["explanation_bearing_attempts"] == 1
     assert metrics["explanation_bearing_input_tokens"] == 20
     assert metrics["explanation_retry_successes"] == 1
+
+
+def test_provider_receives_instructions_matching_the_benchmark(tmp_path: Path) -> None:
+    problem = Problem(
+        "BigCodeBench/13", "def task_func():\n", "task_func", "bigcodebench-hard"
+    )
+    config = RunConfig(
+        run_id="run",
+        strategies=("no-memory",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        dataset_name="bigcodebench-hard",
+        max_attempts=1,
+        budget_usd=10,
+        input_usd_per_mtok=1,
+        output_usd_per_mtok=1,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    assert provider.instructions == [system_instructions("bigcodebench-hard")]
+    assert provider.instructions != [SYSTEM_INSTRUCTIONS]
+
+
+def test_humaneval_keeps_the_strict_instructions(tmp_path: Path) -> None:
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id="run",
+        strategies=("no-memory",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=1,
+        budget_usd=10,
+        input_usd_per_mtok=1,
+        output_usd_per_mtok=1,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    assert provider.instructions == [SYSTEM_INSTRUCTIONS]

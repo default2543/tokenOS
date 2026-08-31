@@ -65,3 +65,45 @@ def test_provider_retries_throttling_without_logical_attempt() -> None:
     AzureOpenAIProvider(config, client=client, sleeper=sleeps.append).generate("prompt")
     assert len(responses.calls) == 3
     assert len(sleeps) == 2
+
+
+def test_sdk_connection_errors_are_retried_not_fatal() -> None:
+    # openai.APIConnectionError derives from the SDK's base class, not the
+    # builtins, and exposes no status code. Treating it as fatal ended a whole
+    # trajectory on any transient network blip -- a sleeping laptop included.
+    import openai
+
+    from tokenos.provider import _retryable_transport_errors
+
+    assert issubclass(openai.APIConnectionError, _retryable_transport_errors())
+    assert not issubclass(openai.APIConnectionError, (ConnectionError, TimeoutError))
+
+    class Dropping:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        def create(self, **kwargs):
+            self.calls += 1
+            if self.calls < 3:
+                raise openai.APIConnectionError(request=SimpleNamespace())
+            return SimpleNamespace(
+                output_text='{"completion":"    return 1\\n"}',
+                id="resp",
+                usage=None,
+                model="m",
+            )
+
+    responses = Dropping()
+    config = RunConfig(
+        run_id="run",
+        strategies=("no-memory",),
+        task_ids=("HumanEval/0",),
+        dataset_path="data.gz",
+        azure_endpoint="https://example",
+    )
+    sleeps: list[float] = []
+    AzureOpenAIProvider(
+        config, client=SimpleNamespace(responses=responses), sleeper=sleeps.append
+    ).generate("prompt")
+    assert responses.calls == 3
+    assert len(sleeps) == 2

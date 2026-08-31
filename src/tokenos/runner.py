@@ -22,11 +22,13 @@ from tokenos.models import (
 from tokenos.provider import ModelProviderError, ModelResponse
 from tokenos.patchsearch.extractor import extract_memory
 from tokenos.patchsearch.retriever import retrieve_memories
-from tokenos.strategies import build_prompt, parse_completion
+from tokenos.strategies import build_prompt, parse_completion, system_instructions
 
 
 class Provider(Protocol):
-    def generate(self, prompt: str) -> ModelResponse: ...
+    def generate(
+        self, prompt: str, *, instructions: str | None = None
+    ) -> ModelResponse: ...
 
 
 class Evaluator(Protocol):
@@ -102,7 +104,8 @@ class BenchmarkRunner:
                 max_attempts=self.config.max_attempts,
                 memories=memories,
             )
-            reservation = self.budget.acquire(prompt)
+            instructions = system_instructions(problem.benchmark)
+            reservation = self.budget.acquire(prompt, instructions)
             if reservation is None:
                 self._stop_reason = "budget_exhausted"
                 self.store.append(
@@ -122,7 +125,7 @@ class BenchmarkRunner:
             )
             total_started = time.monotonic()
             try:
-                response = self.provider.generate(prompt)
+                response = self.provider.generate(prompt, instructions=instructions)
             except Exception as exc:
                 self.budget.release(reservation)
                 self._stop_reason = "provider_error"

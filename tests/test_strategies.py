@@ -1,11 +1,18 @@
 from tokenos.models import (
     AttemptRecord,
     EvaluationResult,
+    EvidenceObservation,
     FailureFeedback,
     ModelUsage,
     Problem,
 )
-from tokenos.strategies import build_prompt, parse_completion
+from tokenos.strategies import (
+    SYSTEM_INSTRUCTIONS,
+    _feedback_text,
+    build_prompt,
+    parse_completion,
+    system_instructions,
+)
 
 
 PROBLEM = Problem("HumanEval/0", "def answer():\n    \"\"\"Return 42.\"\"\"\n", "answer")
@@ -69,3 +76,27 @@ def test_parse_completion_rejects_extra_fields() -> None:
     else:
         raise AssertionError("invalid structured output was accepted")
 
+
+
+def test_bigcodebench_instructions_permit_what_its_tasks_require() -> None:
+    # The HumanEval instructions forbid file, network, and I/O work, which is
+    # what most BigCodeBench-Hard reference solutions do.
+    humaneval = system_instructions("humaneval-plus")
+    library = system_instructions("bigcodebench-hard")
+    assert "access the network" in humaneval
+    assert library != humaneval
+    assert "permitted" in library
+
+
+def test_unknown_benchmark_falls_back_to_the_strict_instructions() -> None:
+    assert system_instructions("mbpp-plus") == SYSTEM_INSTRUCTIONS
+
+
+def test_assertion_diff_is_labelled_in_full_history_feedback() -> None:
+    feedback = FailureFeedback(
+        kind="wrong_answer",
+        message="unittest failure",
+        observations=(EvidenceObservation("assertion_diff", "0 != 42"),),
+    )
+    text = _feedback_text(feedback)
+    assert "Assertion detail: 0 != 42" in text

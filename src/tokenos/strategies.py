@@ -19,6 +19,27 @@ Python source that follows the supplied prompt. Do not repeat the prompt, use Ma
 read files, access the network, or perform input/output. Preserve the required function
 signature and implement the complete function body."""
 
+# BigCodeBench-Hard tasks are library-composition problems whose reference
+# solutions read files, spawn subprocesses, and call network clients. The
+# HumanEval instructions forbid exactly that, so they cannot be shared.
+LIBRARY_TASK_INSTRUCTIONS = """You solve Python function-completion tasks that compose
+standard-library and third-party APIs. Return a JSON object with exactly one field named
+completion. Its value must be the Python source that follows the supplied prompt. Do not
+repeat the prompt or use Markdown. Preserve the required function signature and implement
+the complete function body. File, subprocess, and network operations are permitted when
+the task requires them; write any imports the body needs. Match the documented return
+value, raised exception types, and side effects exactly."""
+
+_BENCHMARK_INSTRUCTIONS = {
+    "humaneval-plus": SYSTEM_INSTRUCTIONS,
+    "bigcodebench-hard": LIBRARY_TASK_INSTRUCTIONS,
+}
+
+
+def system_instructions(benchmark: str) -> str:
+    """Return the system prompt matching a benchmark's task shape."""
+    return _BENCHMARK_INSTRUCTIONS.get(benchmark, SYSTEM_INSTRUCTIONS)
+
 
 def _feedback_text(feedback: FailureFeedback | None) -> str:
     if feedback is None:
@@ -35,6 +56,7 @@ def _feedback_text(feedback: FailureFeedback | None) -> str:
     if feedback.test_id is not None:
         lines.append(f"Test: {feedback.test_id}")
     labels = {
+        "assertion_diff": "Assertion detail",
         "stdout_mismatch": "Output mismatch",
         "stderr": "Standard error",
         "property": "Failed property",

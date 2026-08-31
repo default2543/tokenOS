@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import functools
 import json
 import os
 import random
@@ -23,6 +24,24 @@ class ModelResponse:
     usage: ModelUsage
     latency_seconds: float
     resolved_model: str | None = None
+
+
+@functools.cache
+def _retryable_transport_errors() -> tuple[type[BaseException], ...]:
+    """Transport failures worth another attempt.
+
+    The SDK's connection and timeout errors derive from its own base class, not
+    the builtins, and carry no status code -- so without this they were treated
+    as fatal and ended a whole trajectory.
+    """
+    types: list[type[BaseException]] = [ConnectionError, TimeoutError]
+    try:
+        from openai import APIConnectionError, APITimeoutError
+
+        types.extend([APIConnectionError, APITimeoutError])
+    except ImportError:
+        pass
+    return tuple(types)
 
 
 def _value(obj: Any, name: str, default: Any = None) -> Any:
@@ -86,14 +105,16 @@ class AzureOpenAIProvider:
             )
         return OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
 
-    def generate(self, prompt: str) -> ModelResponse:
+    def generate(
+        self, prompt: str, *, instructions: str | None = None
+    ) -> ModelResponse:
         started = time.monotonic()
         last_error: BaseException | None = None
         for retry in range(4):
             try:
                 response = self.client.responses.create(
                     model=self.config.azure_deployment,
-                    instructions=SYSTEM_INSTRUCTIONS,
+                    instructions=instructions or SYSTEM_INSTRUCTIONS,
                     input=prompt,
                     reasoning={"effort": self.config.reasoning_effort},
                     max_output_tokens=self.config.max_output_tokens,
@@ -127,7 +148,7 @@ class AzureOpenAIProvider:
                     isinstance(status, int) and 500 <= status < 600
                 )
                 retryable = retryable or isinstance(
-                    exc, (ConnectionError, TimeoutError)
+                    exc, _retryable_transport_errors()
                 )
                 if not retryable or retry == 3:
                     break
@@ -152,9 +173,9 @@ def _retry_after_seconds(exc: BaseException) -> float | None:
         return None
 
 
-def structured_output_overhead_bytes() -> int:
+def structured_output_overhead_bytes(instructions: str | None = None) -> int:
     schema = {
-        "instructions": SYSTEM_INSTRUCTIONS,
+        "instructions": instructions or SYSTEM_INSTRUCTIONS,
         "format": {
             "type": "json_schema",
             "name": "coding_completion",
