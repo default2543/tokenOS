@@ -57,7 +57,7 @@ dependency-rich evaluator:
 
 ```bash
 tokenos dataset fetch --name bigcodebench-hard
-docker build -t tokenos-bigcodebench-stdlib:0.1.4 \
+docker build -t tokenos-bigcodebench-stdlib:0.2.1 \
   -f docker/BigCodeBenchStdlib.Dockerfile .
 tokenos doctor --dataset bigcodebench-hard
 ```
@@ -111,6 +111,31 @@ tokenos doctor
 tokenos doctor --live
 ```
 
+## Preflight
+
+A task is only evidence about a memory strategy if its own reference solution
+passes inside the evaluator image. Preflight measures that once, spends no
+tokens, and writes `.tokenos/preflight/<dataset>-<version>.json`:
+
+```bash
+tokenos preflight --dataset bigcodebench-hard --all
+```
+
+Benchmarks then exclude the tasks it found unrunnable:
+
+```bash
+tokenos benchmark --dataset bigcodebench-hard --all --skip-unviable-tasks ...
+```
+
+A report is refused if the dataset digest or evaluator image no longer matches
+the one it was measured against, because viability is a property of both.
+
+Against `tokenos-bigcodebench-stdlib:0.2.1`, 32 of the 148 Hard tasks pass
+preflight. The other 116 need third-party libraries the smoke image does not
+ship; `benchmark` already refuses those through its stdlib-only guard. Of the 33
+tasks that guard admits, preflight excludes one whose reference solution times
+out.
+
 ## Running Benchmarks
 
 Run the fixed five-task smoke suite:
@@ -161,7 +186,10 @@ Python benchmarks register an adapter by name with
 Every non-infrastructure failure produces one `FailureMemory`. Safe oracle
 evidence becomes an `executable_constraint`; unittest, stdin/stdout, property,
 stateful, exception-only, truncated, and hidden-test diagnostics fall back to a
-bounded `failure_summary`. Evaluator text is sanitized before persistence, and
+bounded `failure_summary`. A unittest assertion message is a comparison rather
+than a returned value, so it is carried as an `assertion_diff` observation and
+described as a failed assertion; the evaluator widens unittest's repr bounds so
+the compared values are not elided in the region that distinguishes them. Evaluator text is sanitized before persistence, and
 assertions are checked with Python's AST and literal parser without executing
 candidate code on the host. New artifacts use schema v2; v1 feedback and patches
 remain readable and resumable.

@@ -614,6 +614,89 @@ If PatchSearch cannot reduce tokens while maintaining reasonable correctness, in
 
 ---
 
+### Phase 2 outcome — measured, 2026-08-31
+
+**Gate:** reduce tokens while maintaining reasonable correctness.
+
+**HumanEval+ (n=100, three runs): passed on tokens, no correctness signal.**
+PatchSearch cut tokens 12–28% per solved problem at parity solve@5 (0.96–0.97).
+But the benchmark is saturated at ~0.97, so there is no headroom in which a
+memory strategy could demonstrate a correctness benefit. Paired solve deltas
+were 0, 0, and −4. Treat HumanEval+ as a regression guard, not evidence.
+
+**BigCodeBench-Hard: extraction coverage is structurally zero.**
+This is a property of the code, not a measurement. `extract_memory` emits an
+`executable_constraint` only when evidence carries both a `function_call` and
+an `expected_value` observation marked trusted. Only the HumanEval+ evaluator
+ever sets `trusted`; BigCodeBench emits unittest tracebacks, which carry no
+oracle `(input, expected)` pair. So every BigCodeBench failure becomes a
+bounded `failure_summary`, and PatchSearch degenerates to lossy compression of
+full-history — one sentence against prior code plus a full traceback.
+
+Three defects were masking how that degraded strategy actually performs, all
+fixed before the deciding run:
+
+* Assertion messages were recorded as `actual_value`, so memory claimed the
+  candidate "returned" a comparison. unittest's 80-character repr elision then
+  deleted the region distinguishing expected from actual.
+* Candidate subprocesses wrote to file descriptor 1, corrupting the evaluator's
+  result JSON. This biased against every solution that shells out.
+* `openai.APIConnectionError` was classified non-retryable, ending a whole
+  trajectory on any transient network fault.
+
+A preflight pass now excludes tasks whose own reference solution fails in the
+evaluator image, so a broken task cannot be counted against a strategy.
+
+**Result: PatchSearch loses on correctness and does not save tokens per unit
+of work.** Run `20260831T133412Z-b22fb4`, all 32 preflight-viable
+BigCodeBench-Hard tasks, five attempts, no infrastructure failures.
+
+| strategy | solve@1 | solve@5 | solved | tokens | tokens/solve |
+|---|---|---|---|---|---|
+| full-history | 0.281 | **0.750** | 24/32 | 329,322 | **13,722** |
+| patchsearch | 0.281 | 0.500 | 16/32 | 282,632 | 17,664 (+28.7%) |
+| patchsearch-explained | 0.219 | 0.531 | 17/32 | 263,602 | 15,506 (+13.0%) |
+
+PatchSearch solved eight tasks fewer than full-history and solved none that
+full-history missed. Eight discordant pairs, all one direction: McNemar exact
+p = 0.0078.
+
+The token result inverts under normalization, which is the finding that matters
+most. PatchSearch used 14.2% fewer raw tokens, but it also solved a third fewer
+problems, so **per solved problem it cost 28.7% more**. A compression number
+quoted without a correctness denominator is not a saving; it is partly a record
+of giving up earlier.
+
+Scale note: all three strategies run an identical first attempt apart from one
+sentence, and their solve@1 spread was 7–9 of 32. Run-to-run noise is therefore
+roughly one to two tasks. The eight-task gap is well outside it.
+
+### Consequences for the thesis
+
+The hypothesis in section 3 is too broad as stated. What the evidence supports
+is narrower and more useful:
+
+> Compact executable memory pays where an oracle exposes counterexamples.
+> Where a benchmark reports only unittest diagnostics, no extraction is
+> possible, and bounded summaries carry less than the history they replace.
+
+That boundary — *when* compressed memory pays, and why — is the honest result
+of Phase 2 and should be what the project claims. Section 20's "particularly
+strong result" framing assumes a win that the harder benchmark does not
+support; the finding is a condition, not a defeat.
+
+### Cut from later phases
+
+**Explained PatchSearch is discontinued** — but not because it is worse than
+plain PatchSearch. The two are indistinguishable from each other: across the
+two measured runs they traded places on both solve rate (17 vs 16, then 16 vs
+17) and tokens per solve, within the one-to-two task noise band. The reason to
+stop is that neither variant beats full-history on a summary-only benchmark, so
+a second variant of a mechanism that does not work buys nothing. Keep the code
+path for reproducing published numbers; do not extend it.
+
+---
+
 ## Phase 3 — Additional Memory Types
 
 Add:
