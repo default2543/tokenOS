@@ -40,3 +40,27 @@ def test_bigcodebench_dataset_fetch_parser() -> None:
     )
     assert args.name == "bigcodebench-hard"
     assert args.path is None
+
+
+def test_preflight_parser_defaults_to_the_hard_diagnostic() -> None:
+    args = build_parser().parse_args(["preflight"])
+    assert args.dataset == "bigcodebench-hard"
+    assert args.task_ids is None
+    assert args.report_path is None
+
+
+def test_preflight_selection_flags_are_mutually_exclusive() -> None:
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["preflight", "--all", "--task-ids", "B/1"])
+
+
+def test_benchmark_can_request_preflight_filtering() -> None:
+    args = build_parser().parse_args(
+        ["benchmark", "--dataset", "bigcodebench-hard", "--all", "--skip-unviable-tasks"]
+    )
+    assert args.skip_unviable_tasks is True
+
+
+def test_benchmark_does_not_filter_by_preflight_unless_asked() -> None:
+    args = build_parser().parse_args(["benchmark", "--all"])
+    assert args.skip_unviable_tasks is False

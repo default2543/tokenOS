@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
-from tokenos.dataset import DatasetError, load_problems, select_problems
+from tokenos.dataset import (
+    DatasetError,
+    load_canonical_solutions,
+    load_problems,
+    select_problems,
+)
 
 
 def write_dataset(path: Path) -> None:
@@ -57,3 +62,30 @@ def test_unknown_dataset_is_rejected(tmp_path: Path) -> None:
     write_dataset(path)
     with pytest.raises(DatasetError, match="unknown dataset"):
         load_problems(path, dataset_name="other")
+
+
+def test_canonical_solutions_load_separately_from_problems(tmp_path: Path) -> None:
+    path = tmp_path / "data.jsonl.gz"
+    rows = [
+        {
+            "task_id": "HumanEval/0",
+            "prompt": "def a():\n",
+            "entry_point": "a",
+            "canonical_solution": "    return 1\n",
+        }
+    ]
+    with gzip.open(path, "wt", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row) + "\n")
+    assert load_canonical_solutions(path) == {"HumanEval/0": "    return 1\n"}
+    # A reference solution must never be reachable from a prompt-building object.
+    problem = load_problems(path)["HumanEval/0"]
+    assert "return 1" not in problem.prompt
+    assert not hasattr(problem, "canonical_solution")
+
+
+def test_canonical_solutions_reject_an_unknown_dataset(tmp_path: Path) -> None:
+    path = tmp_path / "data.jsonl.gz"
+    write_dataset(path)
+    with pytest.raises(DatasetError, match="unknown dataset"):
+        load_canonical_solutions(path, dataset_name="mbpp")

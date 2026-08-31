@@ -180,6 +180,33 @@ def load_problems(
     return problems
 
 
+def load_canonical_solutions(
+    path: Path = DEFAULT_DATASET_PATH,
+    *,
+    dataset_name: str = "humaneval-plus",
+) -> dict[str, str]:
+    """Load reference solution bodies for evaluator preflight.
+
+    Deliberately separate from `load_problems`: a reference solution must never
+    be reachable from a `Problem`, because `Problem` is what builds prompts.
+    """
+    if not path.is_file():
+        raise DatasetError(f"dataset not found: {path}; run 'tokenos dataset fetch'")
+    if dataset_name not in {"humaneval-plus", "bigcodebench-hard"}:
+        raise DatasetError(f"unknown dataset: {dataset_name}")
+    solutions: dict[str, str] = {}
+    try:
+        with gzip.open(path, "rt", encoding="utf-8") as handle:
+            for line in handle:
+                if not line.strip():
+                    continue
+                raw = json.loads(line)
+                solutions[raw["task_id"]] = raw["canonical_solution"]
+    except (OSError, json.JSONDecodeError, KeyError, ValueError) as exc:
+        raise DatasetError(f"invalid {dataset_name} dataset: {exc}") from exc
+    return solutions
+
+
 def is_stdlib_problem(problem: Problem) -> bool:
     modules = {library.partition(".")[0] for library in problem.libraries}
     try:

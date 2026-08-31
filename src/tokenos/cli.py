@@ -23,6 +23,7 @@ from tokenos.dataset import (
     fetch_bigcodebench_hard,
     fetch_humaneval_plus,
     file_sha256,
+    load_canonical_solutions,
     load_problems,
     is_stdlib_problem,
     select_problems,
@@ -30,6 +31,13 @@ from tokenos.dataset import (
 )
 from tokenos.evaluator import DockerEvaluator, docker_status
 from tokenos.models import StrategyName
+from tokenos.preflight import (
+    PreflightError,
+    preflight_path,
+    run_preflight,
+    viable_task_ids,
+    write_report,
+)
 from tokenos.provider import AzureOpenAIProvider
 from tokenos.runner import BenchmarkRunner
 from tokenos.strategies import parse_completion
@@ -41,7 +49,7 @@ DATASET_DEFAULTS = {
     "bigcodebench-hard": (
         DEFAULT_BIGCODEBENCH_HARD_PATH,
         BIGCODEBENCH_HARD_VERSION,
-        "tokenos-bigcodebench-stdlib:0.1.4",
+        "tokenos-bigcodebench-stdlib:0.2.1",
     ),
 }
 VALID_STRATEGIES = {
@@ -68,6 +76,21 @@ def build_parser() -> argparse.ArgumentParser:
     doctor.add_argument("--dataset-path", type=Path)
     doctor.add_argument("--evaluator-image")
 
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="check which tasks the evaluator image can actually run (no tokens)",
+    )
+    preflight.add_argument("--dataset", choices=DATASETS, default="bigcodebench-hard")
+    preflight_selection = preflight.add_mutually_exclusive_group()
+    preflight_selection.add_argument(
+        "--all", action="store_true", help="check every dataset task"
+    )
+    preflight_selection.add_argument("--task-ids", help="comma-separated benchmark task IDs")
+    preflight.add_argument("--dataset-path", type=Path)
+    preflight.add_argument("--evaluator-image")
+    preflight.add_argument("--concurrency", type=int, default=4)
+    preflight.add_argument("--report-path", type=Path)
+
     benchmark = subparsers.add_parser("benchmark", help="start a benchmark run")
     benchmark.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
     benchmark.add_argument(
@@ -82,6 +105,12 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--concurrency", type=int, default=4)
     benchmark.add_argument("--budget-usd", type=float, default=10.0)
     benchmark.add_argument("--evaluator-image")
+    benchmark.add_argument(
+        "--skip-unviable-tasks",
+        action="store_true",
+        help="drop tasks whose reference solution fails preflight in this image",
+    )
+    benchmark.add_argument("--preflight-path", type=Path)
 
     resume = subparsers.add_parser("resume", help="resume an interrupted run")
     resume.add_argument("run_id")
@@ -238,12 +267,85 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 1 if hard_failures else 0
 
 
+def command_preflight(args: argparse.Namespace) -> int:
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
+    task_ids = sorted_task_ids(problems) if not args.task_ids else _task_ids(args.task_ids)
+    selected = select_problems(problems, task_ids)
+    solutions = load_canonical_solutions(dataset_path, dataset_name=args.dataset)
+    config = _preflight_config(dataset_path, args.dataset, version, evaluator_image)
+    report = run_preflight(
+        selected,
+        solutions,
+        DockerEvaluator(config),
+        dataset_name=args.dataset,
+        dataset_version=version,
+        dataset_sha256=config.dataset_sha256,
+        evaluator_image=evaluator_image,
+        concurrency=args.concurrency,
+    )
+    path = args.report_path or preflight_path(args.dataset, version)
+    write_report(report, path)
+    checked = report["checked_tasks"]
+    viable = report["viable_tasks"]
+    print(f"Preflight {args.dataset} {version} in {evaluator_image}")
+    print(f"  reference solution passes: {viable}/{checked}")
+    excluded = [item for item in report["results"] if not item["viable"]]
+    for item in excluded[:10]:
+        print(f"  [DROP] {item['task_id']}: {item['status']} {item['detail']}".rstrip())
+    if len(excluded) > 10:
+        print(f"  ... and {len(excluded) - 10} more")
+    print(f"Report: {path}")
+    return 0 if viable else 1
+
+
+def _preflight_config(
+    dataset_path: Path, dataset_name: str, version: str, evaluator_image: str
+):
+    """Build a evaluator-only config; preflight makes no model calls."""
+    from tokenos.config import utc_now
+    from tokenos.models import RunConfig
+
+    return RunConfig(
+        run_id="preflight",
+        strategies=("no-memory",),
+        task_ids=(),
+        dataset_path=str(dataset_path),
+        dataset_name=dataset_name,
+        dataset_version=version,
+        dataset_sha256=file_sha256(dataset_path),
+        evaluator_image=evaluator_image,
+        created_at=utc_now(),
+    )
+
+
 def command_benchmark(args: argparse.Namespace) -> int:
     default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
     dataset_path = args.dataset_path or default_path
     evaluator_image = args.evaluator_image or default_image
     problems = load_problems(dataset_path, dataset_name=args.dataset)
     task_ids = sorted_task_ids(problems) if args.all else _task_ids(args.task_ids)
+    if args.skip_unviable_tasks:
+        path = args.preflight_path or preflight_path(args.dataset, version)
+        viable = viable_task_ids(
+            path,
+            dataset_sha256=file_sha256(dataset_path),
+            evaluator_image=evaluator_image,
+        )
+        dropped = [task_id for task_id in task_ids if task_id not in viable]
+        task_ids = tuple(task_id for task_id in task_ids if task_id in viable)
+        if not task_ids:
+            raise PreflightError(
+                f"no selected task passes preflight in {evaluator_image}"
+            )
+        if dropped:
+            preview = ", ".join(dropped[:5])
+            suffix = "..." if len(dropped) > 5 else ""
+            print(
+                f"Preflight excluded {len(dropped)} unviable task(s): {preview}{suffix}"
+            )
     selected = select_problems(problems, task_ids)
     if args.dataset == "bigcodebench-hard" and evaluator_image == default_image:
         unsupported = [problem.task_id for problem in selected if not is_stdlib_problem(problem)]
@@ -347,13 +449,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_dataset_fetch(args)
         if args.command == "doctor":
             return command_doctor(args)
+        if args.command == "preflight":
+            return command_preflight(args)
         if args.command == "benchmark":
             return command_benchmark(args)
         if args.command == "resume":
             return command_resume(args)
         if args.command == "report":
             return command_report(args)
-    except (ConfigurationError, DatasetError, ArtifactError) as exc:
+    except (ConfigurationError, DatasetError, ArtifactError, PreflightError) as exc:
         parser.error(str(exc))
     return 1
 
