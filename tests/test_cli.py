@@ -64,3 +64,19 @@ def test_benchmark_can_request_preflight_filtering() -> None:
 def test_benchmark_does_not_filter_by_preflight_unless_asked() -> None:
     args = build_parser().parse_args(["benchmark", "--all"])
     assert args.skip_unviable_tasks is False
+
+
+def test_crosstask_strategy_requires_a_memory_store() -> None:
+    args = build_parser().parse_args(
+        ["benchmark", "--all", "--strategies", "patchsearch-crosstask"]
+    )
+    assert args.memory_store is None
+    assert "patchsearch-crosstask" in _strategies(args.strategies)
+
+
+def test_memory_store_flag_is_parsed() -> None:
+    args = build_parser().parse_args(
+        ["benchmark", "--all", "--strategies", "patchsearch-crosstask",
+         "--memory-store", "20260831T133412Z-b22fb4"]
+    )
+    assert args.memory_store == "20260831T133412Z-b22fb4"

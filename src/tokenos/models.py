@@ -6,7 +6,11 @@ import json
 from typing import Any, Literal
 
 StrategyName = Literal[
-    "no-memory", "full-history", "patchsearch", "patchsearch-explained"
+    "no-memory",
+    "full-history",
+    "patchsearch",
+    "patchsearch-explained",
+    "patchsearch-crosstask",
 ]
 FailureKind = Literal[
     "wrong_answer",

@@ -13,6 +13,10 @@ from tokenos.models import (
 )
 from tokenos.patchsearch.retriever import retrieve_memories
 
+PATCHSEARCH_STRATEGIES = frozenset(
+    {"patchsearch", "patchsearch-explained", "patchsearch-crosstask"}
+)
+
 SYSTEM_INSTRUCTIONS = """You solve standalone Python function-completion tasks.
 Return a JSON object with exactly one field named completion. Its value must be the
 Python source that follows the supplied prompt. Do not repeat the prompt, use Markdown,
@@ -77,6 +81,7 @@ def build_prompt(
     max_attempts: int = 5,
     patches: Sequence[Patch] | None = None,
     memories: Sequence[FailureMemory] | None = None,
+    transferred: Sequence[FailureMemory] | None = None,
 ) -> str:
     sections = [
         f"TASK {problem.task_id}",
@@ -104,7 +109,7 @@ def build_prompt(
             )
         else:
             sections.append("There are no previous attempts.")
-    elif strategy in {"patchsearch", "patchsearch-explained"}:
+    elif strategy in PATCHSEARCH_STRATEGIES:
         if memories is not None:
             selected = list(memories)
         elif patches is not None:
@@ -140,6 +145,16 @@ def build_prompt(
             )
         else:
             sections.append("There is no validated failure memory from previous attempts.")
+        if transferred:
+            # Labelled separately and by source task: these describe a
+            # different problem and are hints, not constraints on this one.
+            sections.append("RELATED FAILURES FROM OTHER TASKS")
+            for memory in transferred:
+                sections.append(f"{memory.task_id}: {memory.content}")
+            sections.append(
+                "These describe different tasks. Treat them as hints about "
+                "recurring mistakes, never as requirements for this task."
+            )
     else:
         raise ValueError(f"Unknown strategy: {strategy}")
     return "\n\n".join(sections).rstrip() + "\n"

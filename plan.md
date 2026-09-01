@@ -667,9 +667,13 @@ problems, so **per solved problem it cost 28.7% more**. A compression number
 quoted without a correctness denominator is not a saving; it is partly a record
 of giving up earlier.
 
-Scale note: all three strategies run an identical first attempt apart from one
-sentence, and their solve@1 spread was 7–9 of 32. Run-to-run noise is therefore
-roughly one to two tasks. The eight-task gap is well outside it.
+**Correction, after replication.** The solve@1 spread suggested run-to-run
+noise of one to two tasks. Repeating the identical configuration showed it is
+larger: full-history moved 24 -> 21 and PatchSearch 16 -> 19, a three-task swing
+each, and the same comparison gave p = 0.0078 in one run and p = 0.625 in the
+next. A single run's p-value overstates what one run supports. Pooled across
+both, the direction holds -- 11 discordant pairs to 1, p = 0.0063 -- but any
+future single-run claim should be treated as provisional until replicated.
 
 ### Consequences for the thesis
 
@@ -710,6 +714,60 @@ EPHEMERAL
 ```
 
 Create a unified memory interface.
+
+---
+
+### Phase 4 precondition, resolved 2026-09-01
+
+An allocator allocates a scarce resource. Under task-local memory nothing was
+scarce: the retrieval budget bound on **0 of 155** attempts, the pool never
+exceeded five memories, and full history peaked at 6,828 tokens against a
+~200k window. A utility score would have ranked items that were all included
+anyway. Compression cannot pay where nothing fails to fit.
+
+Cross-task memory (`store.py`) and the heuristic allocator (`allocator.py`) are
+now implemented, and the precondition is met: the candidate pool reaches 15,218
+characters against a 3,000-character budget and **binds on 148 of 148 tasks**,
+with roughly 24 of 74 memories selected per attempt.
+
+Two constraints shaped the store. It is **frozen**, seeded from a completed
+run, because online accumulation would make a task's context depend on which
+other tasks a thread pool finished first. And **executable constraints never
+cross task boundaries**: every BigCodeBench task defines `task_func`, so a
+transferred constraint would assert against an unrelated function of the same
+name and be silently false. Only summaries transfer.
+
+**Result: allocation works; there is nothing worth allocating.**
+Run `20260901T003400Z-52a4f2`, same 32 tasks.
+
+| strategy | solve@5 | solved | tokens | tokens/solve |
+|---|---|---|---|---|
+| full-history | 0.656 | 21/32 | 341,439 | 16,259 |
+| patchsearch | 0.594 | 19/32 | 285,390 | **15,021** |
+| patchsearch-crosstask | 0.531 | 17/32 | **379,641** | 22,332 |
+
+Cross-task retrieval is the only strategy that made the prompt *larger* than
+full history while solving fewer tasks: compression became expansion. It cost
+48.7% more per solved problem than plain PatchSearch. The difference in solve
+rate is inside the noise band established above (p = 0.625 against PatchSearch),
+so the correctness claim is weak; the token cost is not.
+
+The cause was measurable before the run and is a property of the benchmark, not
+the code. Across 186 memories from 27 tasks, every root cause was task-local --
+a missing `wget` on one task, `KeyError: 'zz'` on another, a different absent
+path each time. Exactly one pair of tasks shared a failure mode. BigCodeBench-
+Hard is a set of deliberately independent library-composition problems, so
+there is no recurring mistake for accumulated experience to catch, and the
+allocator spends 2,706 characters per retry on other tasks' irrelevant history.
+
+**What this establishes.** The allocation machinery is verified and the policy
+is observable: selection is deterministic, budget-respecting, and now actually
+binding. What it lacks is a task distribution with recurring failure modes.
+Optimal allocation of memory that does not transfer is still worthless, and
+costs more than not allocating at all. Evaluating the allocator on its merits
+requires a benchmark where the same mistake recurs across tasks -- a repository
+of related tasks, a multi-file agent trajectory, or a benchmark family sharing
+an API surface -- not a wider search over scoring functions.
 
 ---
 

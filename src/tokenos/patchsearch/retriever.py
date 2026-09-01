@@ -3,7 +3,9 @@ from __future__ import annotations
 from collections.abc import Sequence
 from hashlib import sha256
 
-from tokenos.models import AttemptRecord, FailureMemory, Patch
+from tokenos.allocator import allocate
+from tokenos.models import AttemptRecord, FailureMemory, Patch, Problem
+from tokenos.store import MemoryStore, keywords
 
 MAX_MEMORY_ITEM_CHARS = 600
 MAX_MEMORY_SECTION_CHARS = 3000
@@ -67,3 +69,31 @@ def retrieve_patches(history: Sequence[AttemptRecord]) -> list[Patch]:
             if patch.validated and patch.task_id == attempt.task_id:
                 selected.setdefault(patch.assertion, patch)
     return list(selected.values())
+
+
+def retrieve_with_store(
+    problem: Problem,
+    history: Sequence[AttemptRecord],
+    store: MemoryStore | None,
+    *,
+    max_chars: int = MAX_MEMORY_SECTION_CHARS,
+) -> tuple[list[FailureMemory], list[FailureMemory]]:
+    """Fill the budget with task-local memory first, then cross-task memory.
+
+    A task's own failures are direct evidence about the contract it must
+    satisfy, so they outrank anything transferred. Cross-task memory competes
+    for whatever budget is left, which is where the allocator earns its keep.
+    """
+    local = retrieve_memories(history, max_chars=max_chars)
+    if store is None:
+        return local, []
+    used = sum(len(item.content) + len(item.explanation or "") + 32 for item in local)
+    remaining = max_chars - used
+    if remaining <= 0:
+        return local, []
+    allocations = allocate(
+        keywords(problem.prompt),
+        store.candidates(problem.task_id),
+        budget_chars=remaining,
+    )
+    return local, [allocation.memory for allocation in allocations]

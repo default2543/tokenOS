@@ -21,8 +21,14 @@ from tokenos.models import (
 )
 from tokenos.provider import ModelProviderError, ModelResponse
 from tokenos.patchsearch.extractor import extract_memory
-from tokenos.patchsearch.retriever import retrieve_memories
-from tokenos.strategies import build_prompt, parse_completion, system_instructions
+from tokenos.patchsearch.retriever import retrieve_with_store
+from tokenos.store import MemoryStore
+from tokenos.strategies import (
+    PATCHSEARCH_STRATEGIES,
+    build_prompt,
+    parse_completion,
+    system_instructions,
+)
 
 
 class Provider(Protocol):
@@ -42,11 +48,15 @@ class BenchmarkRunner:
         provider: Provider,
         evaluator: Evaluator,
         store: EventStore,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self.config = config
         self.provider = provider
         self.evaluator = evaluator
         self.store = store
+        # Frozen for the run's duration: a task's context must not depend on
+        # which other tasks a thread pool happened to finish first.
+        self.memory_store = memory_store
         self.budget = BudgetManager(config, committed_usd=store.committed_cost())
         self._records_lock = threading.Lock()
         self._records = store.completed_attempts()
@@ -94,8 +104,13 @@ class BenchmarkRunner:
             return
         next_attempt = max((item.attempt for item in history), default=0) + 1
         for attempt in range(next_attempt, self.config.max_attempts + 1):
-            patch_strategy = strategy in {"patchsearch", "patchsearch-explained"}
-            memories = retrieve_memories(history) if patch_strategy else []
+            patch_strategy = strategy in PATCHSEARCH_STRATEGIES
+            store = self.memory_store if strategy == "patchsearch-crosstask" else None
+            memories, transferred = (
+                retrieve_with_store(problem, history, store)
+                if patch_strategy
+                else ([], [])
+            )
             prompt = build_prompt(
                 strategy,
                 problem,
@@ -103,6 +118,7 @@ class BenchmarkRunner:
                 history,
                 max_attempts=self.config.max_attempts,
                 memories=memories,
+                transferred=transferred,
             )
             instructions = system_instructions(problem.benchmark)
             reservation = self.budget.acquire(prompt, instructions)
@@ -193,7 +209,7 @@ class BenchmarkRunner:
                 resolved_model=response.resolved_model,
                 patches=(),
                 memories=(),
-                retrieved_memories=tuple(memories),
+                retrieved_memories=tuple(memories) + tuple(transferred),
             )
             if patch_strategy and not evaluation.passed:
                 memory = extract_memory(

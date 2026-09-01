@@ -3,6 +3,7 @@ from threading import Lock
 
 from tokenos.artifacts import EventStore
 from tokenos.models import (
+    AttemptRecord,
     EvaluationResult,
     FailureFeedback,
     ModelUsage,
@@ -242,3 +243,56 @@ def test_humaneval_keeps_the_strict_instructions(tmp_path: Path) -> None:
     provider = FakeProvider()
     BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
     assert provider.instructions == [SYSTEM_INSTRUCTIONS]
+
+
+def _store_with(task_id: str, content: str):
+    from tokenos.models import FailureMemory
+    from tokenos.store import MemoryStore
+    other = Problem(task_id, "def f(archive):\n  archive files\n", "f")
+    record = AttemptRecord(
+        run_id="r", task_id=task_id, strategy="patchsearch", attempt=1, prompt="p",
+        completion="c", solution="s", response_id=None, request_id=None,
+        usage=ModelUsage(), evaluation=EvaluationResult("fail", "fail", False),
+        model_latency_seconds=0, evaluation_latency_seconds=0,
+        total_latency_seconds=0, estimated_cost_usd=0, created_at="now",
+        memories=(FailureMemory(task_id=task_id, kind="failure_summary",
+            content=content, source_attempt=1, failure_kind="runtime_error",
+            fingerprint="fp"),),
+    )
+    return MemoryStore.from_records([record], {task_id: other})
+
+
+def _crosstask_config(strategy, task_id):
+    return RunConfig(
+        run_id="run", strategies=(strategy,), task_ids=(task_id,),
+        dataset_path="data.gz", max_attempts=1, budget_usd=10,
+        input_usd_per_mtok=1, output_usd_per_mtok=1,
+    )
+
+
+def test_crosstask_strategy_receives_memory_from_other_tasks(tmp_path: Path) -> None:
+    problem = Problem("HumanEval/0", "def f(archive):\n  archive files\n", "f")
+    config = _crosstask_config("patchsearch-crosstask", problem.task_id)
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    BenchmarkRunner(
+        config, provider, FakeEvaluator(), store,
+        memory_store=_store_with("HumanEval/9", "RUNTIME ERROR: archive missing."),
+    ).run([problem])
+    assert "RELATED FAILURES FROM OTHER TASKS" in provider.prompts[0]
+    assert "HumanEval/9" in provider.prompts[0]
+
+
+def test_plain_patchsearch_ignores_the_cross_task_store(tmp_path: Path) -> None:
+    # The store must not leak into the strategy it is being compared against.
+    problem = Problem("HumanEval/0", "def f(archive):\n  archive files\n", "f")
+    config = _crosstask_config("patchsearch", problem.task_id)
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    BenchmarkRunner(
+        config, provider, FakeEvaluator(), store,
+        memory_store=_store_with("HumanEval/9", "RUNTIME ERROR: archive missing."),
+    ).run([problem])
+    assert "RELATED FAILURES" not in provider.prompts[0]

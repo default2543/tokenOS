@@ -3,6 +3,7 @@ from tokenos.models import (
     EvidenceObservation,
     EvaluationResult,
     FailureFeedback,
+    FailureMemory,
     ModelUsage,
     Problem,
 )
@@ -284,3 +285,51 @@ def test_actual_value_still_wins_over_an_assertion_diff() -> None:
         ),
     )
     assert explain_failure(evidence) == "Previous candidate returned 0."
+
+
+def _crosstask_store():
+    from tokenos.store import MemoryStore
+    other = Problem("HumanEval/9", "def other(path):\n  archive files\n", "other")
+    record = AttemptRecord(
+        run_id="run", task_id="HumanEval/9", strategy="patchsearch", attempt=1,
+        prompt="p", completion="c", solution="s", response_id=None, request_id=None,
+        usage=ModelUsage(), evaluation=EvaluationResult("fail", "fail", False),
+        model_latency_seconds=0, evaluation_latency_seconds=0,
+        total_latency_seconds=0, estimated_cost_usd=0, created_at="now",
+        memories=(FailureMemory(
+            task_id="HumanEval/9", kind="failure_summary",
+            content="RUNTIME ERROR: archive path did not exist.", source_attempt=1,
+            failure_kind="runtime_error", fingerprint="fp-other"),),
+    )
+    return MemoryStore.from_records([record], {"HumanEval/9": other})
+
+
+def test_task_local_memory_is_kept_separate_from_transferred_memory() -> None:
+    from tokenos.patchsearch.retriever import retrieve_with_store
+    problem = Problem("HumanEval/0", "def answer(archive):\n  archive files\n", "answer")
+    memory = extract_memory(problem, FEEDBACK, 1)
+    record = _attempt(1)
+    record = AttemptRecord(**{**record.to_dict(), "usage": record.usage,
+        "evaluation": record.evaluation, "patches": (), "memories": (memory,),
+        "retrieved_memories": ()})
+    local, transferred = retrieve_with_store(problem, [record], _crosstask_store())
+    assert [m.task_id for m in local] == ["HumanEval/0"]
+    assert [m.task_id for m in transferred] == ["HumanEval/9"]
+
+
+def test_transferred_memory_is_labelled_by_its_source_task() -> None:
+    problem = Problem("HumanEval/0", "def answer(archive):\n  archive files\n", "answer")
+    from tokenos.patchsearch.retriever import retrieve_with_store
+    _, transferred = retrieve_with_store(problem, [], _crosstask_store())
+    prompt = build_prompt("patchsearch-crosstask", problem, 2, [],
+                          memories=[], transferred=transferred)
+    assert "RELATED FAILURES FROM OTHER TASKS" in prompt
+    assert "HumanEval/9:" in prompt
+    # The model must not read another task's failure as a requirement here.
+    assert "never as requirements for this task" in prompt
+
+
+def test_no_store_means_no_transferred_memory() -> None:
+    from tokenos.patchsearch.retriever import retrieve_with_store
+    local, transferred = retrieve_with_store(PROBLEM, [], None)
+    assert transferred == []

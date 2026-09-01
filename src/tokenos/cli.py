@@ -40,6 +40,7 @@ from tokenos.preflight import (
 )
 from tokenos.provider import AzureOpenAIProvider
 from tokenos.runner import BenchmarkRunner
+from tokenos.store import MemoryStore
 from tokenos.strategies import parse_completion
 
 DEFAULT_RUNS_ROOT = Path("runs")
@@ -57,6 +58,7 @@ VALID_STRATEGIES = {
     "full-history",
     "patchsearch",
     "patchsearch-explained",
+    "patchsearch-crosstask",
 }
 
 
@@ -111,6 +113,10 @@ def build_parser() -> argparse.ArgumentParser:
         help="drop tasks whose reference solution fails preflight in this image",
     )
     benchmark.add_argument("--preflight-path", type=Path)
+    benchmark.add_argument(
+        "--memory-store",
+        help="run id whose memories seed cross-task retrieval",
+    )
 
     resume = subparsers.add_parser("resume", help="resume an interrupted run")
     resume.add_argument("run_id")
@@ -357,8 +363,28 @@ def command_benchmark(args: argparse.Namespace) -> int:
                 f"unsupported selection: {preview}{suffix}; use an official full "
                 "evaluator image explicitly for the complete suite"
             )
+    # Validate the strategy/store pairing before touching Azure configuration:
+    # it is a local mistake and deserves a local error.
+    strategies = _strategies(args.strategies)
+    memory_store = None
+    if args.memory_store:
+        if "patchsearch-crosstask" not in strategies:
+            raise ConfigurationError(
+                "--memory-store only affects patchsearch-crosstask; add it to "
+                "--strategies or drop the flag"
+            )
+        source = EventStore(args.runs_root, args.memory_store)
+        memory_store = MemoryStore.from_run(source.events_path, problems)
+        print(
+            f"Seeded cross-task memory from {args.memory_store}: "
+            f"{len(memory_store)} memories"
+        )
+    elif "patchsearch-crosstask" in strategies:
+        raise ConfigurationError(
+            "patchsearch-crosstask requires --memory-store RUN_ID"
+        )
     config = config_from_environment(
-        strategies=_strategies(args.strategies),
+        strategies=strategies,
         task_ids=task_ids,
         dataset_path=dataset_path,
         dataset_sha256=file_sha256(dataset_path),
@@ -376,6 +402,7 @@ def command_benchmark(args: argparse.Namespace) -> int:
         AzureOpenAIProvider(config),
         DockerEvaluator(config),
         store,
+        memory_store=memory_store,
     ).run(selected)
     _print_summary(summary)
     print(f"Artifacts: {store.run_dir}")
