@@ -43,7 +43,16 @@ def explain_failure(
     actual = _observation(evidence, "actual_value")
     diff = _observation(evidence, "assertion_diff")
     exception = _observation(evidence, "exception")
+    expected = _observation(evidence, "expected_value")
     if evidence.kind == "wrong_answer":
+        # Both sides of the comparison is the most actionable form: it states
+        # the gap the retry has to close rather than only what went wrong.
+        if actual is not None and expected is not None:
+            return _bounded(
+                f"Previous candidate returned {actual[0]} but expected "
+                f"{expected[0]}.",
+                limit,
+            )
         if actual is not None:
             return _bounded(f"Previous candidate returned {actual[0]}.", limit)
         # An assertion diff compares two values; it is not a returned value.
@@ -115,6 +124,18 @@ def extract_memory(
             return memory
     label = evidence.kind.replace("_", " ").upper()
     test = f" Test: {evidence.test_id}." if evidence.test_id else ""
+    # A retry that satisfies one assertion often breaks the next, so name the
+    # other failures rather than showing a keyhole view of the contract.
+    others = [
+        item.value
+        for item in evidence.observations
+        if item.kind == "assertion_diff" and ":" in item.value
+    ]
+    if evidence.failed_test_count and evidence.failed_test_count > 1:
+        extra = f" {evidence.failed_test_count} tests failed."
+        if others:
+            extra += " Also: " + " ".join(others[:2])
+        test += extra
     # The one-line explanation budget is for `patchsearch-explained` captions.
     # A summary fallback is the only evidence the model receives, so it may use
     # the whole memory budget.

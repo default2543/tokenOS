@@ -30,6 +30,26 @@ def sanitize_message(value: object) -> str:
     return message
 
 
+_COMPARISONS = (
+    # unittest renders assertEqual as "<actual> != <expected>".
+    re.compile(r"^(?P<actual>.+?) != (?P<expected>.+?)(?:\n|$)", re.S),
+    re.compile(r"^(?P<expected>.+?) not found in (?P<actual>.+?)(?:\n|$)", re.S),
+    re.compile(r"^(?P<expected>.+?) not in (?P<actual>.+?)(?:\n|$)", re.S),
+)
+
+
+def split_comparison(message: str) -> tuple[str, str] | None:
+    """Recover the two compared values from a unittest assertion message."""
+    for pattern in _COMPARISONS:
+        found = pattern.match(message.strip())
+        if found:
+            actual = found.group("actual").strip()
+            expected = found.group("expected").strip()
+            if actual and expected and actual != expected:
+                return actual, expected
+    return None
+
+
 def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
     combined = "\n".join(details.values())
     message = sanitize_message(combined or f"BigCodeBench evaluator returned {status}")
@@ -66,16 +86,41 @@ def failure_feedback(status: str, details: dict[str, str]) -> dict[str, Any]:
         # A unittest assertion message is a comparison, not a returned value.
         # Recording it as `actual_value` made downstream memory claim the
         # candidate "returned" the whole diff, so it gets its own kind.
-        diff = sanitize_message(assertion.group(1)) if assertion.group(1).strip() else None
+        raw_assertion = assertion.group(1)
+        diff = sanitize_message(raw_assertion) if raw_assertion.strip() else None
         feedback: dict[str, Any] = {
             "kind": "wrong_answer",
             "message": message,
             "observations": observations,
             "test_id": test_id,
+            "failed_test_count": len(details),
             "provenance": "bigcodebench-unittest",
         }
         if diff:
-            feedback["observations"].append({"kind": "assertion_diff", "value": diff})
+            # Split the raw text: sanitizing first collapses the newlines that
+            # bound each compared value, so the match would run to the end.
+            split = split_comparison(raw_assertion)
+            if split:
+                # Structured values are far more actionable than the raw diff.
+                feedback["observations"].append(
+                    {"kind": "actual_value", "value": sanitize_message(split[0])}
+                )
+                feedback["observations"].append(
+                    {"kind": "expected_value", "value": sanitize_message(split[1])}
+                )
+            else:
+                feedback["observations"].append(
+                    {"kind": "assertion_diff", "value": diff}
+                )
+        # One failing test is a keyhole view of the contract. Carry the others
+        # so a retry does not fix one assertion and break the next.
+        for name, trace in list(details.items())[1:4]:
+            other = re.search(r"AssertionError:?[ \t]*(.*)\Z", trace, re.S)
+            if other and other.group(1).strip():
+                feedback["observations"].append({
+                    "kind": "assertion_diff",
+                    "value": sanitize_message(f"{name}: {other.group(1)}"),
+                })
         return feedback
     exception = re.findall(r"^([A-Za-z_][A-Za-z0-9_.]*(?:Error|Exception)):\s*(.*)$", combined, re.M)
     if exception:

@@ -141,6 +141,9 @@ class PythonBenchmarkAdapter:
                 observations.append(
                     EvidenceObservation(observation_kind, value, trusted, clipped)
                 )
+        count = raw.get("failed_test_count")
+        if count is not None and not isinstance(count, int):
+            raise AdapterError("evidence failed_test_count must be an integer")
         test_id = raw.get("test_id")
         if test_id is not None:
             if not isinstance(test_id, str):
@@ -166,6 +169,7 @@ class PythonBenchmarkAdapter:
             expected_repr=by_kind.get("expected_value"),
             actual_repr=by_kind.get("actual_value"),
             exception_type=by_kind.get("exception"),
+            failed_test_count=count,
         )
 
 

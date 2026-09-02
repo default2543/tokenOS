@@ -14,7 +14,12 @@ from tokenos.models import (
 from tokenos.patchsearch.retriever import retrieve_memories
 
 PATCHSEARCH_STRATEGIES = frozenset(
-    {"patchsearch", "patchsearch-explained", "patchsearch-crosstask"}
+    {
+        "patchsearch",
+        "patchsearch-explained",
+        "patchsearch-crosstask",
+        "patchsearch-with-code",
+    }
 )
 
 SYSTEM_INSTRUCTIONS = """You solve standalone Python function-completion tasks.
@@ -129,6 +134,14 @@ def build_prompt(
             ]
         else:
             selected = retrieve_memories(history)
+        if strategy == "patchsearch-with-code" and history:
+            latest = max(history, key=lambda item: item.attempt)
+            sections.extend(
+                [
+                    f"MOST RECENT ATTEMPT (attempt {latest.attempt})",
+                    latest.completion,
+                ]
+            )
         if selected:
             sections.append("FAILURE MEMORY")
             for memory in selected:

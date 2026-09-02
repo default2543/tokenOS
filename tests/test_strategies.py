@@ -100,3 +100,27 @@ def test_assertion_diff_is_labelled_in_full_history_feedback() -> None:
     )
     text = _feedback_text(feedback)
     assert "Assertion detail: 0 != 42" in text
+
+
+def test_with_code_variant_carries_only_the_most_recent_completion() -> None:
+    # Isolates one variable against full-history: the prior code, not the
+    # richer feedback and not every earlier attempt.
+    first = prior_attempt()
+    second = AttemptRecord(**{**first.to_dict(), "usage": first.usage,
+        "evaluation": first.evaluation, "attempt": 2,
+        "completion": "    return 99\n"})
+    prompt = build_prompt("patchsearch-with-code", PROBLEM, 3, [first, second])
+    assert "MOST RECENT ATTEMPT (attempt 2)" in prompt
+    assert "return 99" in prompt
+    assert "return 0" not in prompt
+
+
+def test_plain_patchsearch_still_carries_no_code() -> None:
+    prompt = build_prompt("patchsearch", PROBLEM, 2, [prior_attempt()])
+    assert "MOST RECENT ATTEMPT" not in prompt
+    assert "return 0" not in prompt
+
+
+def test_with_code_variant_has_no_code_on_the_first_attempt() -> None:
+    prompt = build_prompt("patchsearch-with-code", PROBLEM, 1, [])
+    assert "MOST RECENT ATTEMPT" not in prompt

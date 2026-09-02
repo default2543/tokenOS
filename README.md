@@ -57,7 +57,7 @@ dependency-rich evaluator:
 
 ```bash
 tokenos dataset fetch --name bigcodebench-hard
-docker build -t tokenos-bigcodebench-stdlib:0.2.1 \
+docker build -t tokenos-bigcodebench-stdlib:0.3.0 \
   -f docker/BigCodeBenchStdlib.Dockerfile .
 tokenos doctor --dataset bigcodebench-hard
 ```
@@ -130,7 +130,7 @@ tokenos benchmark --dataset bigcodebench-hard --all --skip-unviable-tasks ...
 A report is refused if the dataset digest or evaluator image no longer matches
 the one it was measured against, because viability is a property of both.
 
-Against `tokenos-bigcodebench-stdlib:0.2.1`, 32 of the 148 Hard tasks pass
+Against `tokenos-bigcodebench-stdlib:0.3.0`, 32 of the 148 Hard tasks pass
 preflight. The other 116 need third-party libraries the smoke image does not
 ship; `benchmark` already refuses those through its stdlib-only guard. Of the 33
 tasks that guard admits, preflight excludes one whose reference solution times

@@ -39,24 +39,57 @@ AssertionError: 1 != 2
 """
 
 
-def test_assertion_message_is_recorded_as_a_diff_not_a_returned_value() -> None:
+def test_assertion_message_is_split_into_actual_and_expected() -> None:
+    # unittest renders assertEqual as "<actual> != <expected>"; structured
+    # values are far more actionable than the raw prose diff.
     feedback = evaluator.failure_feedback("fail", {"test_case_2": FTP_TRACE})
     assert feedback["kind"] == "wrong_answer"
     observations = _observations(feedback)
+    assert observations["actual_value"] == "'Failed to connect'"
+    assert observations["expected_value"] == "'Failed to connect to invalid_server'"
+
+
+def test_containment_assertions_are_split_too() -> None:
+    trace = (
+        "Traceback (most recent call last):\n"
+        "  File \"__test__.py\", line 9, in test_case_1\n"
+        "AssertionError: 'needle' not found in 'a haystack'\n"
+    )
+    observations = _observations(evaluator.failure_feedback("fail", {"t": trace}))
+    assert observations["expected_value"] == "'needle'"
+    assert observations["actual_value"] == "'a haystack'"
+
+
+def test_unsplittable_assertion_falls_back_to_the_raw_diff() -> None:
+    trace = (
+        "Traceback (most recent call last):\n"
+        "  File \"__test__.py\", line 9, in test_case_1\n"
+        "AssertionError: something went wrong\n"
+    )
+    observations = _observations(evaluator.failure_feedback("fail", {"t": trace}))
+    assert observations["assertion_diff"] == "something went wrong"
     assert "actual_value" not in observations
-    assert "Failed to connect to invalid_server" in observations["assertion_diff"]
 
 
-def test_assertion_diff_does_not_bleed_into_another_test_traceback() -> None:
-    # `details` holds every failing test; the diff must describe only the test
-    # that `test_id` names.
+def test_primary_assertion_does_not_bleed_into_another_traceback() -> None:
+    # A multi-line diff must not run on into the next test's traceback.
     feedback = evaluator.failure_feedback(
         "fail", {"test_case_2": FTP_TRACE, "test_case_9": OTHER_TRACE}
     )
     assert feedback["test_id"] == "test_case_2"
-    diff = _observations(feedback)["assertion_diff"]
-    assert "test_case_9" not in diff
-    assert "1 != 2" not in diff
+    assert "test_case_9" not in _observations(feedback)["expected_value"]
+
+
+def test_other_failing_tests_are_reported_separately() -> None:
+    # One failing test is a keyhole view of the contract; a retry that fixes it
+    # can break the next one.
+    feedback = evaluator.failure_feedback(
+        "fail", {"test_case_2": FTP_TRACE, "test_case_9": OTHER_TRACE}
+    )
+    assert feedback["failed_test_count"] == 2
+    extra = [item["value"] for item in feedback["observations"]
+             if item["kind"] == "assertion_diff"]
+    assert any(v.startswith("test_case_9:") and "1 != 2" in v for v in extra)
 
 
 def test_full_traceback_is_still_available_for_full_history() -> None:

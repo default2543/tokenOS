@@ -60,7 +60,7 @@ def test_extracts_validated_executable_patch() -> None:
 def test_explained_patch_contains_deterministic_wrong_answer_context() -> None:
     patch = extract_patch(PROBLEM, FEEDBACK, 1, include_explanation=True)
     assert patch is not None
-    assert patch.explanation == "Previous candidate returned 0."
+    assert patch.explanation == "Previous candidate returned 0 but expected 42."
 
 
 def test_extracts_runtime_and_timeout_oracle_patches() -> None:

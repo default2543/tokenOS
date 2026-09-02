@@ -717,6 +717,55 @@ Create a unified memory interface.
 
 ---
 
+### The mechanism, corrected — 2026-09-01
+
+PatchSearch's loss was never that summarising a failure destroys information.
+It was that PatchSearch **discarded the prior implementation**, forcing the
+model to rewrite a whole function from a one-sentence hint while full history
+handed it code to edit. That is a defect in the strategy, not a cost inherent
+to compression.
+
+Three fixes, all in the evidence path:
+
+* Split the assertion into `actual_value` and `expected_value`. unittest
+  renders `assertEqual` as `<actual> != <expected>`, which was being carried as
+  prose. Memory now states the gap a retry has to close.
+* Report every failing test, not only the first. A retry that satisfied one
+  assertion routinely broke the next.
+* Carry the most recent completion alongside the bounded memory
+  (`patchsearch-with-code`). One completion, not the four full history keeps.
+
+**Result: parity with full history at 21.5% fewer tokens, on the hard
+benchmark.** Run `20260901T024612Z-bf19df`, 32 preflight-viable tasks.
+
+| strategy | solve@5 | solved | tokens | tokens/solve | vs full-history |
+|---|---|---|---|---|---|
+| no-memory | 0.312 | 10/32 | 252,095 | 25,210 | +64.7% |
+| full-history | 0.688 | 22/32 | 336,779 | 15,308 | — |
+| patchsearch | 0.562 | 18/32 | 276,905 | 15,384 | +0.5% |
+| **patchsearch-with-code** | **0.656** | **21/32** | **264,267** | **12,584** | **-17.8%** |
+
+21 against 22 is statistically indistinguishable (discordant 3/2, p = 1.0) at
+21.5% fewer raw tokens and 17.8% less per solved problem. This satisfies
+section 20's first two criteria on a benchmark that is not saturated.
+
+The two controls are what make the mechanism legible rather than the number
+lucky. `no-memory` at 10/32 shows memory is doing most of the work
+(p = 0.001 against with-code). Plain `patchsearch` at 15,384 tokens per solve
+shows the summary alone buys **no token advantage at all** once normalised by
+correctness -- it simply solves less. Restoring one completion recovers three
+of the four lost tasks *and* drops cost 18%.
+
+Bounded failure memory plus the current implementation beats verbose history.
+That is the thesis, and it now has evidence on the harder benchmark.
+
+**Standing caveat.** One run, and noise here is about three tasks, so a
+one-task gap is inside it. The claim is parity, not superiority. The 21.5%
+token reduction is the robust half. Replication is required before this is
+stated without qualification.
+
+---
+
 ### Phase 4 precondition, resolved 2026-09-01
 
 An allocator allocates a scarce resource. Under task-local memory nothing was

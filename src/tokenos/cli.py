@@ -50,7 +50,7 @@ DATASET_DEFAULTS = {
     "bigcodebench-hard": (
         DEFAULT_BIGCODEBENCH_HARD_PATH,
         BIGCODEBENCH_HARD_VERSION,
-        "tokenos-bigcodebench-stdlib:0.2.1",
+        "tokenos-bigcodebench-stdlib:0.3.0",
     ),
 }
 VALID_STRATEGIES = {
@@ -59,6 +59,7 @@ VALID_STRATEGIES = {
     "patchsearch",
     "patchsearch-explained",
     "patchsearch-crosstask",
+    "patchsearch-with-code",
 }
 
 

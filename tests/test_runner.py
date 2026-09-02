@@ -188,9 +188,12 @@ def test_explained_patchsearch_is_persistent_and_measured(tmp_path: Path) -> Non
     summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
     records = store.completed_attempts()
     assert records[0].memories[0].explanation == (
-        "Previous candidate returned False."
+        "Previous candidate returned False but expected True."
     )
-    assert "Explanation: Previous candidate returned False." in provider.prompts[1]
+    assert (
+        "Explanation: Previous candidate returned False but expected True."
+        in provider.prompts[1]
+    )
     assert "Constraint: assert f(*()) == True" in provider.prompts[1]
     metrics = summary["strategies"]["patchsearch-explained"]
     assert metrics["solved_tasks"] == 1

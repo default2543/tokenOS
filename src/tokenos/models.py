@@ -11,6 +11,7 @@ StrategyName = Literal[
     "patchsearch",
     "patchsearch-explained",
     "patchsearch-crosstask",
+    "patchsearch-with-code",
 ]
 FailureKind = Literal[
     "wrong_answer",
@@ -81,6 +82,7 @@ class FailureEvidence:
     expected_repr: str | None = None
     actual_repr: str | None = None
     exception_type: str | None = None
+    failed_test_count: int | None = None
 
 
 # Source compatibility for callers that constructed v1 feedback directly.
