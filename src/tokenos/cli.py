@@ -10,6 +10,7 @@ import sys
 from typing import Sequence
 
 from tokenos.artifacts import ArtifactError, EventStore
+from tokenos.compiler import ContextBudgetError
 from tokenos.config import (
     ConfigurationError,
     config_from_environment,
@@ -39,9 +40,11 @@ from tokenos.preflight import (
     write_report,
 )
 from tokenos.provider import AzureOpenAIProvider
+from tokenos.replay import budget_sweep, context_growth
 from tokenos.runner import BenchmarkRunner
+from tokenos.runtime import DEFAULT_CONTEXT_BUDGET, DEFAULT_STRATEGY, Runtime
 from tokenos.store import MemoryStore
-from tokenos.strategies import parse_completion
+from tokenos.strategies import PATCHSEARCH_STRATEGIES, parse_completion
 
 DEFAULT_RUNS_ROOT = Path("runs")
 DATASETS = ("humaneval-plus", "bigcodebench-hard")
@@ -132,6 +135,45 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("run_id")
     report.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     report.add_argument("--json", action="store_true")
+
+    solve = subparsers.add_parser(
+        "solve", help="solve one task with the TokenOS runtime under a context budget"
+    )
+    solve.add_argument("task_id")
+    solve.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
+    solve.add_argument("--dataset-path", type=Path)
+    solve.add_argument("--context-budget", type=int, default=DEFAULT_CONTEXT_BUDGET)
+    solve.add_argument(
+        "--strategy",
+        choices=sorted(PATCHSEARCH_STRATEGIES),
+        default=DEFAULT_STRATEGY,
+    )
+    solve.add_argument("--max-attempts", type=int, default=5)
+    solve.add_argument("--budget-usd", type=float, default=1.0)
+    solve.add_argument("--evaluator-image")
+    solve.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    solve.add_argument(
+        "--memory-store", help="run id whose memories seed cross-task retrieval"
+    )
+    solve.add_argument("--json", action="store_true")
+
+    growth = subparsers.add_parser(
+        "growth", help="show measured prompt size by attempt for a run (no tokens)"
+    )
+    growth.add_argument("run_id")
+    growth.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    growth.add_argument("--json", action="store_true")
+
+    sweep = subparsers.add_parser(
+        "sweep",
+        help="recompile a run's bounded-memory prompts under context budgets (no tokens)",
+    )
+    sweep.add_argument("run_id")
+    sweep.add_argument(
+        "--budgets", default="4000,1500,1000", help="comma-separated token budgets"
+    )
+    sweep.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    sweep.add_argument("--json", action="store_true")
     return parser
 
 
@@ -455,6 +497,124 @@ def command_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_solve(args: argparse.Namespace) -> int:
+    default_path, _, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
+    (problem,) = select_problems(problems, (args.task_id,))
+    memory_store = None
+    if args.memory_store:
+        source = EventStore(args.runs_root, args.memory_store)
+        memory_store = MemoryStore.from_run(source.events_path, problems)
+    runtime = Runtime(
+        args.context_budget,
+        strategy=args.strategy,
+        max_attempts=args.max_attempts,
+        memory_store=memory_store,
+        budget_usd=args.budget_usd,
+        evaluator_image=args.evaluator_image or default_image,
+    )
+    result = runtime.run(problem)
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return 0 if result.passed else 2
+    print(
+        f"{problem.task_id} with {args.strategy}, "
+        f"context budget {args.context_budget} tokens"
+    )
+    for item in result.attempts:
+        context = item.context
+        kept = f"{len(context.memories)} memories"
+        if context.included_code:
+            kept += " + code"
+        dropped = ""
+        if context.trimmed:
+            dropped = (
+                f", dropped {len(context.dropped_memories)} memories"
+                + (" and code" if context.dropped_code else "")
+            )
+        feedback = item.record.evaluation.feedback
+        status = "pass" if item.passed else feedback.kind if feedback else "fail"
+        print(
+            f"  attempt {item.record.attempt}: {status:<14} "
+            f"~{context.estimated_tokens} tokens compiled, "
+            f"{item.record.usage.input_tokens} billed ({kept}{dropped})"
+        )
+    verdict = "solved" if result.passed else f"unsolved ({result.stop_reason})"
+    print(
+        f"  {verdict}: {result.total_tokens} tokens, "
+        f"${result.estimated_cost_usd:.4f} estimated"
+    )
+    return 0 if result.passed else 2
+
+
+def _run_records(args: argparse.Namespace) -> tuple[EventStore, list]:
+    store = EventStore(args.runs_root, args.run_id)
+    records = store.completed_attempts()
+    if not records:
+        raise ArtifactError(f"run {args.run_id} has no completed attempts")
+    return store, records
+
+
+def command_growth(args: argparse.Namespace) -> int:
+    _, records = _run_records(args)
+    growth = context_growth(records)
+    if args.json:
+        print(json.dumps(growth, indent=2, sort_keys=True))
+        return 0
+    print(f"Mean input tokens by attempt, run {args.run_id}")
+    width = max(len(strategy) for strategy in growth)
+    attempts = sorted({row["attempt"] for rows in growth.values() for row in rows})
+    print(" " * (width + 2) + "".join(f"{f'#{n}':>8}" for n in attempts))
+    for strategy, rows in growth.items():
+        by_attempt = {row["attempt"]: row["mean_input_tokens"] for row in rows}
+        cells = "".join(f"{by_attempt.get(n, ''):>8}" for n in attempts)
+        print(f"  {strategy:<{width}}{cells}")
+    return 0
+
+
+def command_sweep(args: argparse.Namespace) -> int:
+    store, records = _run_records(args)
+    budgets: list[int | None] = [None]
+    for raw in args.budgets.split(","):
+        if raw.strip():
+            value = int(raw)
+            if value <= 0:
+                raise ConfigurationError("budgets must be positive")
+            budgets.append(value)
+    config = store.read_manifest()["config"]
+    problems = load_problems(
+        Path(config["dataset_path"]),
+        dataset_name=config.get("dataset_name", "humaneval-plus"),
+    )
+    sweep = budget_sweep(records, problems, budgets)
+    if args.json:
+        print(json.dumps(sweep, indent=2, sort_keys=True))
+        return 0
+    if not sweep:
+        print(f"Run {args.run_id} has no bounded-memory trajectories to recompile")
+        return 0
+    print(f"Context budget sweep, run {args.run_id} (estimated tokens)")
+    for strategy, rows in sweep.items():
+        print(f"  {strategy}")
+        for row in rows:
+            if row["budget_tokens"] is None:
+                print(
+                    f"    unbounded: {row['attempts']} attempts, "
+                    f"{row['estimated_tokens']} tokens; "
+                    f"{row['reproduced']} prompts reproduced byte-for-byte, "
+                    f"estimate covers billed tokens on {row['estimate_covers']}"
+                )
+                continue
+            print(
+                f"    {row['budget_tokens']:>6}: {row['estimated_tokens']} tokens, "
+                f"{row['trimmed']} trimmed (code dropped {row['dropped_code']}, "
+                f"memories dropped {row['dropped_memories']}), "
+                f"{row['unfit']} could not fit the task"
+            )
+    return 0
+
+
 def _print_summary(summary: dict) -> None:
     state = "complete" if summary.get("complete") else "partial"
     print(f"Run {summary['run_id']}: {state}")
@@ -485,7 +645,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_resume(args)
         if args.command == "report":
             return command_report(args)
-    except (ConfigurationError, DatasetError, ArtifactError, PreflightError) as exc:
+        if args.command == "solve":
+            return command_solve(args)
+        if args.command == "growth":
+            return command_growth(args)
+        if args.command == "sweep":
+            return command_sweep(args)
+    except (
+        ConfigurationError,
+        ContextBudgetError,
+        DatasetError,
+        ArtifactError,
+        PreflightError,
+    ) as exc:
         parser.error(str(exc))
     return 1
 

@@ -41,6 +41,36 @@ class Evaluator(Protocol):
     def evaluate(self, problem: Problem, solution: str) -> EvaluationResult: ...
 
 
+def score_output(
+    problem: Problem, output_text: str, evaluator: Evaluator
+) -> tuple[str, str, EvaluationResult, float]:
+    """Parse a model response and evaluate it.
+
+    Returns the completion, the full solution, the evaluation, and evaluation
+    latency. A malformed response is a failed attempt with `invalid_output`
+    evidence rather than an error, because it is the model's mistake; evaluator
+    failures propagate, because they are infrastructure's.
+    """
+    try:
+        completion = parse_completion(output_text)
+    except ValueError as exc:
+        return output_text, problem.prompt, EvaluationResult(
+            base_status="fail",
+            plus_status="fail",
+            passed=False,
+            feedback=FailureFeedback(
+                kind="invalid_output",
+                message=str(exc),
+                benchmark=problem.benchmark,
+                provenance="tokenos-response-parser",
+            ),
+        ), 0.0
+    solution = problem.prompt + completion
+    started = time.monotonic()
+    evaluation = evaluator.evaluate(problem, solution)
+    return completion, solution, evaluation, time.monotonic() - started
+
+
 class BenchmarkRunner:
     def __init__(
         self,
@@ -155,25 +185,8 @@ class BenchmarkRunner:
                 return
             cost = self.budget.reconcile(reservation, response.usage)
             try:
-                completion = parse_completion(response.output_text)
-                solution = problem.prompt + completion
-                eval_started = time.monotonic()
-                evaluation = self.evaluator.evaluate(problem, solution)
-                eval_latency = time.monotonic() - eval_started
-            except ValueError as exc:
-                completion = response.output_text
-                solution = problem.prompt
-                eval_latency = 0.0
-                evaluation = EvaluationResult(
-                    base_status="fail",
-                    plus_status="fail",
-                    passed=False,
-                    feedback=FailureFeedback(
-                        kind="invalid_output",
-                        message=str(exc),
-                        benchmark=problem.benchmark,
-                        provenance="tokenos-response-parser",
-                    ),
+                completion, solution, evaluation, eval_latency = score_output(
+                    problem, response.output_text, self.evaluator
                 )
             except Exception as exc:
                 self._stop_reason = "evaluator_error"

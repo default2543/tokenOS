@@ -299,3 +299,32 @@ def test_plain_patchsearch_ignores_the_cross_task_store(tmp_path: Path) -> None:
         memory_store=_store_with("HumanEval/9", "RUNTIME ERROR: archive missing."),
     ).run([problem])
     assert "RELATED FAILURES" not in provider.prompts[0]
+
+
+def test_evaluator_value_error_is_infrastructure_not_invalid_output(
+    tmp_path: Path,
+) -> None:
+    # AdapterError subclasses ValueError; it once masqueraded as the model's
+    # malformed output and was scored as a failed attempt.
+    class BrokenEvaluator:
+        def evaluate(self, problem: Problem, solution: str) -> EvaluationResult:
+            raise ValueError("unknown benchmark")
+
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id="run",
+        strategies=("no-memory",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=1,
+        input_usd_per_mtok=1,
+        cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    summary = BenchmarkRunner(
+        config, FakeProvider(), BrokenEvaluator(), store
+    ).run([problem])
+    assert summary["stop_reason"] == "evaluator_error"
+    assert not store.completed_attempts()

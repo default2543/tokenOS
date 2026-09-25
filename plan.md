@@ -871,6 +871,59 @@ result = runtime.run(task)
 
 ---
 
+### Phase 5 outcome — built, 2026-09-25
+
+The runtime exists with the interface above. `Runtime(context_budget=4000)`
+solves one task with `patchsearch-with-code`, the strategy that reached parity,
+and `tokenos solve` exposes it on the command line. Each attempt runs task-local
+retrieval, optional cross-task allocation from a frozen store, then a new
+**context compiler** (`compiler.py`), which is the piece that was missing:
+retrieval bounded memory in characters, but nothing bounded the prompt.
+
+**The compiler reproduces the measured strategy exactly.** It renders through
+the same `build_prompt` the benchmark used. Replayed over run
+`20260901T024612Z-bf19df`, all 194 recorded PatchSearch prompts are recompiled
+byte-for-byte when the budget does not bind, so the runtime is the benchmarked
+strategy rather than a lookalike of it.
+
+**Token estimation is calibrated, not guessed.** Across 707 recorded requests
+the densest text reached 3.34 UTF-8 bytes per API-reported input token; the
+compiler divides by 3.0, which overestimates all 194 replayed attempts. No
+tokenizer dependency was added.
+
+**Priority under pressure follows the ablations.** Memory lifted 10/32 to 18/32
+and the latest code lifted 18/32 to 21/32, so when a budget binds the compiler
+drops transferred memory first, then the code, then summaries oldest first, and
+keeps executable constraints longest. The code is kept or dropped whole. A task
+that does not fit on its own raises `ContextBudgetError` rather than being
+truncated.
+
+**Where the budget binds** (`tokenos sweep`, same run, estimated tokens):
+
+| budget | with-code attempts trimmed | code dropped | memories dropped | tokens vs unbounded |
+|---|---|---|---|---|
+| unbounded / 4000 | 0 / 90 | 0 | 0 | — |
+| 1500 | 18 / 90 | 18 | 1 | -17.8% |
+| 1000 | 48 / 90 | 47 | 18 | -34.0% |
+
+At the default 4,000 tokens nothing is cut, because bounded memory already
+peaks at 1,775 billed tokens. That is the Phase 2 result restated as a guarantee:
+the context stays small without a limit having to enforce it. Tighter budgets
+mostly remove the code first, which is the component worth three tasks, so their
+correctness cost has to be **measured live, not inferred**. The sweep prices
+each budget in advance so that live run can be chosen deliberately.
+
+**A defect fixed along the way.** Parsing and evaluation are now one shared
+function. Before, a `ValueError` raised *inside the evaluator* — including
+`AdapterError` for an unregistered benchmark — was caught as the model's
+malformed output and scored as a failed attempt. It now stops the trajectory
+as an evaluator error.
+
+**Next.** Replicate the with-code parity result; then run with-code at 1,000
+tokens against unbounded to measure what dropping the code costs.
+
+---
+
 ## Phase 6 — Large Evaluation
 
 Run all memory strategies across the complete benchmark.
