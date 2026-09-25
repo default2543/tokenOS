@@ -764,6 +764,34 @@ one-task gap is inside it. The claim is parity, not superiority. The 21.5%
 token reduction is the robust half. Replication is required before this is
 stated without qualification.
 
+### Replication — 2026-09-25
+
+Run `20260925T150550Z-f59c90`, identical configuration, the two strategies
+only.
+
+| run | full-history | with-code | discordant (fh / wc) | p | raw tokens | tokens/solve |
+|---|---|---|---|---|---|---|
+| original | 22/32 | 21/32 | 3 / 2 | 1.0 | -21.5% | -17.8% |
+| replication | 21/32 | 19/32 | 3 / 1 | 0.625 | -16.7% | -7.9% |
+| **pooled** | **43/64** | **40/64** | **6 / 3** | **0.508** | **-19.0%** | **-13.0%** |
+
+**The token reduction replicates; the size of the per-solve saving does not.**
+Raw tokens fell 16.7% against 21.5%, and pooled the saving is 19.0%. Per solved
+problem it roughly halved, to 7.9%, because with-code solved two fewer this time
+while full-history solved one fewer. Pooled, with-code is 13.0% cheaper per solve.
+
+**Correctness is not distinguishable, but the direction is consistent.** Neither
+run nor the pool is significant (pooled p = 0.508). But with-code trailed in both
+runs, and full-history holds 6 of the 9 discordant tasks. The accurate claim is
+narrower than "parity": *about 19% fewer tokens, at a correctness cost that is
+not measurable at n = 32 and, if real, is about three tasks in 64.* Separating
+the two would take roughly four times as many paired tasks, which means an
+evaluator image that runs more than 32 of the 148 Hard tasks.
+
+Both strategies moved between runs (full-history lost 2 and gained 1;
+with-code lost 2 and gained 0), consistent with the three-task noise band
+already recorded.
+
 ---
 
 ### Phase 4 precondition, resolved 2026-09-01
@@ -919,7 +947,7 @@ function. Before, a `ValueError` raised *inside the evaluator* — including
 malformed output and scored as a failed attempt. It now stops the trajectory
 as an evaluator error.
 
-**Next.** Replicate the with-code parity result; then run with-code at 1,000
+**Next.** (Replication done, recorded above.) Run with-code at 1,000
 tokens against unbounded to measure what dropping the code costs.
 
 ---

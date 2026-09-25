@@ -39,25 +39,34 @@ result.total_tokens  # what the whole trajectory cost
 
 Measured on the **32 BigCodeBench-Hard tasks** whose reference solutions pass
 in the evaluator sandbox. Each task gets five attempts. Model: `gpt-5.4-mini`.
+Two runs with identical settings, pooled (64 paired trajectories per strategy):
 
 | Strategy | What each retry sees | Solved | Tokens | Tokens per solve |
 |---|---|:-:|--:|--:|
-| No memory | the task only | 10/32 | 252,095 | 25,210 |
-| Full history | every completion + every failure | **22/32** | 336,779 | 15,308 |
-| PatchSearch | bounded failure memory | 18/32 | 276,905 | 15,384 |
-| **PatchSearch + code** | bounded memory + the latest completion | **21/32** | **264,267** | **12,584** |
+| Full history | every completion + every failure | **43/64** | 692,242 | 16,099 |
+| **PatchSearch + code** | bounded memory + the latest completion | 40/64 | **560,385** | **14,010** |
 
-> **Parity with full history at 21.5% fewer tokens, and 17.8% less per solved
-> problem.** Solving 21 against 22 tasks is statistically indistinguishable
-> (McNemar exact test, 3 vs 2 discordant tasks, p = 1.0).
+> **19% fewer tokens, and 13% less per solved problem.** The token saving held
+> in both runs (21.5%, then 16.7%). The correctness gap of 3 tasks in 64 is not
+> statistically significant (McNemar exact test, 6 vs 3 discordant tasks,
+> p = 0.51). But PatchSearch + code trailed in both runs, so treat it as a small
+> possible cost, not as parity.
 
-The two control strategies are what make the mechanism clear:
+The first run also included two control strategies, and they show where the
+benefit comes from:
+
+| Strategy (first run only) | Solved | Tokens per solve |
+|---|:-:|--:|
+| No memory | 10/32 | 25,210 |
+| PatchSearch (memory, no code) | 18/32 | 15,384 |
+| PatchSearch + code | 21/32 | 12,584 |
+| Full history | 22/32 | 15,308 |
 
 - **Memory does most of the work.** No memory solves 10/32.
 - **A summary alone saves nothing once you count solved problems.** PatchSearch
   without code costs about as much per solve as full history; it just solves
-  fewer tasks. Adding back *one* completion recovers three of the four lost
-  tasks and cuts cost per solve by 18%.
+  fewer tasks. Adding back *one* completion recovers most of the lost tasks and
+  cuts cost per solve by 18%.
 
 ### Context growth
 
@@ -86,9 +95,10 @@ first retry.
 
 ### Caveats
 
-- **One run.** Two identical runs differed by about three tasks, so the
-  correctness claim is *parity*, not superiority, until it is replicated. The
-  token reduction is the more reliable half.
+- **Small sample.** Only 32 tasks run in the default sandbox, and identical
+  runs differ by about three tasks. A 3-in-64 gap would need roughly four times
+  as many paired tasks to confirm or rule out. The token saving is the reliable
+  result.
 - **Memory is weaker on BigCodeBench.** HumanEval+ reports the exact failing
   input and expected output, so TokenOS stores failures there as executable
   assertions. BigCodeBench reports only unittest messages, so failures become
@@ -377,7 +387,8 @@ TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 python -m pytest -m docker
   planned FACT and DECISION types have no evidence behind them yet.
 - [x] **Phase 4:** cross-task store and heuristic token allocator
 - [x] **Phase 5:** `Runtime` and the budget-enforcing context compiler
-- [ ] Replicate the with-code parity result
+- [x] Replicate the headline result: token saving holds; correctness gap is not significant
+- [ ] More viable tasks (a fuller evaluator image), so a 3-in-64 gap can be resolved
 - [ ] Measure what a binding budget costs in correctness (with-code at 1,000 tokens vs unbounded)
 - [ ] A benchmark with recurring failure modes, so cross-task allocation can be tested fairly
 - [ ] **Phase 6:** full-benchmark evaluation with tables and graphs
