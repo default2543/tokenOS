@@ -8,6 +8,7 @@ from typing import Protocol, Sequence
 
 from tokenos.artifacts import EventStore
 from tokenos.budget import BudgetManager
+from tokenos.compiler import ContextBudgetError, compile_context
 from tokenos.config import utc_now
 from tokenos.metrics import summarize
 from tokenos.models import (
@@ -136,21 +137,46 @@ class BenchmarkRunner:
         for attempt in range(next_attempt, self.config.max_attempts + 1):
             patch_strategy = strategy in PATCHSEARCH_STRATEGIES
             store = self.memory_store if strategy == "patchsearch-crosstask" else None
-            memories, transferred = (
-                retrieve_with_store(problem, history, store)
-                if patch_strategy
-                else ([], [])
-            )
-            prompt = build_prompt(
-                strategy,
-                problem,
-                attempt,
-                history,
-                max_attempts=self.config.max_attempts,
-                memories=memories,
-                transferred=transferred,
-            )
             instructions = system_instructions(problem.benchmark)
+            context = None
+            if patch_strategy:
+                memories, transferred = retrieve_with_store(problem, history, store)
+                # Only bounded-memory strategies are compiled: full history has
+                # no budget-safe form, which is the point of the comparison.
+                try:
+                    context = compile_context(
+                        strategy,
+                        problem,
+                        attempt,
+                        history,
+                        memories=memories,
+                        transferred=transferred,
+                        budget_tokens=self.config.context_budget,
+                        instructions=instructions,
+                        max_attempts=self.config.max_attempts,
+                    )
+                except ContextBudgetError as exc:
+                    self._stop_reason = "context_budget_exceeded"
+                    self.store.append(
+                        "context_budget_exceeded",
+                        task_id=problem.task_id,
+                        strategy=strategy,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    return
+                prompt = context.prompt
+                memories = list(context.memories)
+                transferred = list(context.transferred)
+            else:
+                memories, transferred = [], []
+                prompt = build_prompt(
+                    strategy,
+                    problem,
+                    attempt,
+                    history,
+                    max_attempts=self.config.max_attempts,
+                )
             reservation = self.budget.acquire(prompt, instructions)
             if reservation is None:
                 self._stop_reason = "budget_exhausted"
@@ -168,6 +194,7 @@ class BenchmarkRunner:
                 attempt=attempt,
                 prompt=prompt,
                 reserved_cost_usd=reservation.amount_usd,
+                context=None if context is None else context.to_dict(),
             )
             total_started = time.monotonic()
             try:

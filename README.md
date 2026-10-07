@@ -7,7 +7,7 @@ Learn from every failed attempt without replaying all of them.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-145%20passing-brightgreen)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-3-blue)
 
 [Results](#results) · [How it works](#how-it-works) · [Quickstart](#quickstart) ·
@@ -166,7 +166,7 @@ token; dividing by 3.0 overestimates every one of them.
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m pytest            # 137 tests, no network or Docker needed
+python -m pytest            # 145 tests, no network or Docker needed
 ```
 
 ### Use the Runtime with your own model and tests
@@ -324,6 +324,11 @@ tokenos benchmark \
   --strategies full-history,patchsearch-with-code \
   --budget-usd 10 --concurrency 4
 ```
+
+`--context-budget N` makes the context compiler enforce an N-token budget on
+the bounded-memory strategies, exactly as the Runtime does. Full history is
+never compiled. What the compiler kept or dropped for each request is logged
+in `events.jsonl`. Without the flag, prompts are identical to earlier runs.
 
 Strategies: `no-memory`, `full-history`, `patchsearch`,
 `patchsearch-with-code`, `patchsearch-explained` (discontinued, kept so past

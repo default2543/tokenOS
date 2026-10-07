@@ -1,6 +1,6 @@
 import pytest
 
-from tokenos.cli import _strategies, build_parser
+from tokenos.cli import _strategies, build_parser, command_benchmark
 from tokenos.config import ConfigurationError
 
 
@@ -80,3 +80,36 @@ def test_memory_store_flag_is_parsed() -> None:
          "--memory-store", "20260831T133412Z-b22fb4"]
     )
     assert args.memory_store == "20260831T133412Z-b22fb4"
+
+
+def test_benchmark_context_budget_defaults_to_unbounded() -> None:
+    args = build_parser().parse_args(["benchmark", "--all"])
+    assert args.context_budget is None
+
+
+def test_benchmark_context_budget_is_parsed() -> None:
+    args = build_parser().parse_args(
+        ["benchmark", "--all", "--strategies", "patchsearch-with-code",
+         "--context-budget", "1000"]
+    )
+    assert args.context_budget == 1000
+
+
+@pytest.mark.parametrize(
+    ("strategies", "budget", "message"),
+    [
+        ("full-history", "1000", "bounded-memory"),
+        ("patchsearch-with-code", "0", "positive"),
+    ],
+)
+def test_benchmark_rejects_a_context_budget_that_cannot_apply(
+    tmp_path, strategies: str, budget: str, message: str
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        command_benchmark(
+            build_parser().parse_args(
+                ["benchmark", "--dataset-path", str(tmp_path / "missing.jsonl.gz"),
+                 "--task-ids", "HumanEval/0", "--strategies", strategies,
+                 "--context-budget", budget]
+            )
+        )

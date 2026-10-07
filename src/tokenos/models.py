@@ -229,6 +229,9 @@ class RunConfig:
     output_usd_per_mtok: float = 0.0
     evaluator_image: str = "tokenos-evalplus:0.3.1"
     evaluator_timeout_seconds: float = 90.0
+    # Token budget the context compiler enforces on bounded-memory strategies;
+    # None leaves prompts exactly as retrieval produced them.
+    context_budget: int | None = None
     created_at: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

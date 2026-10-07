@@ -328,3 +328,79 @@ def test_evaluator_value_error_is_infrastructure_not_invalid_output(
     ).run([problem])
     assert summary["stop_reason"] == "evaluator_error"
     assert not store.completed_attempts()
+
+
+def _with_code_run(tmp_path: Path, context_budget: int | None, run_id: str):
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id=run_id,
+        strategies=("patchsearch-with-code",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=2,
+        concurrency=1,
+        input_usd_per_mtok=1,
+        cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1,
+        context_budget=context_budget,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    contexts = [
+        event["context"]
+        for event in store.events()
+        if event["type"] == "request_started"
+    ]
+    return summary, provider, contexts
+
+
+def test_unbounded_run_logs_the_compiled_context_without_trimming(
+    tmp_path: Path,
+) -> None:
+    _, provider, contexts = _with_code_run(tmp_path, None, "unbounded")
+    assert "MOST RECENT ATTEMPT (attempt 1)" in provider.prompts[1]
+    assert contexts[1]["included_code"] is True
+    assert contexts[1]["budget_tokens"] is None
+    assert not contexts[1]["dropped_code"]
+
+
+def test_binding_context_budget_drops_the_code_before_memory(tmp_path: Path) -> None:
+    _, _, unbounded = _with_code_run(tmp_path, None, "unbounded")
+    budget = unbounded[1]["estimated_tokens"] - 1
+    _, provider, contexts = _with_code_run(tmp_path, budget, "bounded")
+    assert "MOST RECENT ATTEMPT" not in provider.prompts[1]
+    assert "assert f(*()) == True" in provider.prompts[1]
+    assert contexts[1]["dropped_code"] is True
+    assert contexts[1]["memories"] == 1
+    assert contexts[1]["estimated_tokens"] <= budget
+
+
+def test_task_over_the_context_budget_stops_without_a_model_call(
+    tmp_path: Path,
+) -> None:
+    summary, provider, _ = _with_code_run(tmp_path, 1, "tiny")
+    assert summary["stop_reason"] == "context_budget_exceeded"
+    assert provider.prompts == []
+
+
+def test_full_history_is_never_compiled(tmp_path: Path) -> None:
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id="run",
+        strategies=("full-history",),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=2,
+        input_usd_per_mtok=1,
+        cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1,
+        context_budget=1,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = FakeProvider()
+    summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    assert summary["strategies"]["full-history"]["solved_tasks"] == 1
+    assert "PREVIOUS ATTEMPTS" in provider.prompts[1]

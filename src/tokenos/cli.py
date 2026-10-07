@@ -112,6 +112,12 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--budget-usd", type=float, default=10.0)
     benchmark.add_argument("--evaluator-image")
     benchmark.add_argument(
+        "--context-budget",
+        type=int,
+        help="token budget the context compiler enforces on bounded-memory "
+        "strategies (default: unbounded)",
+    )
+    benchmark.add_argument(
         "--skip-unviable-tasks",
         action="store_true",
         help="drop tasks whose reference solution fails preflight in this image",
@@ -371,6 +377,14 @@ def _preflight_config(
 
 
 def command_benchmark(args: argparse.Namespace) -> int:
+    if args.context_budget is not None:
+        if args.context_budget <= 0:
+            raise ConfigurationError("--context-budget must be positive")
+        if not PATCHSEARCH_STRATEGIES.intersection(_strategies(args.strategies)):
+            raise ConfigurationError(
+                "--context-budget only affects bounded-memory strategies; add "
+                "one to --strategies or drop the flag"
+            )
     default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
     dataset_path = args.dataset_path or default_path
     evaluator_image = args.evaluator_image or default_image
@@ -437,7 +451,9 @@ def command_benchmark(args: argparse.Namespace) -> int:
         concurrency=args.concurrency,
         budget_usd=args.budget_usd,
     )
-    config = replace(config, evaluator_image=evaluator_image)
+    config = replace(
+        config, evaluator_image=evaluator_image, context_budget=args.context_budget
+    )
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)
     summary = BenchmarkRunner(

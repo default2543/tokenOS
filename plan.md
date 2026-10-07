@@ -950,6 +950,26 @@ as an evaluator error.
 **Next.** (Replication done, recorded above.) Run with-code at 1,000
 tokens against unbounded to measure what dropping the code costs.
 
+**Budgeted benchmark runs — built, 2026-10-06.** `tokenos benchmark
+--context-budget N` routes every bounded-memory prompt through the compiler,
+so a live run measures the Runtime's actual behaviour under a budget. Full
+history is left uncompiled as the control. Each `request_started` event records
+the compiled context (tokens, code kept or dropped, memories dropped); a task
+that cannot fit stops its trajectory as `context_budget_exceeded` without a
+model call. Unbounded runs are unchanged: replaying the replication run
+`20260925T150550Z-f59c90`, all 99 with-code prompts are reproduced byte-for-byte,
+and at 1,000 tokens 52 of 99 would be trimmed (code dropped on 51), with no task
+too large to fit. The live run is
+
+```bash
+tokenos benchmark --dataset bigcodebench-hard --all --skip-unviable-tasks \
+  --strategies full-history,patchsearch-with-code --context-budget 1000 \
+  --budget-usd 4 --concurrency 4
+```
+
+which pairs with-code@1000 against full history in the same run and against
+the two unbounded with-code runs (21/32, 19/32).
+
 ---
 
 ## Phase 6 — Large Evaluation
