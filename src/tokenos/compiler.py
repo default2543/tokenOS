@@ -27,7 +27,7 @@ import math
 
 from tokenos.models import AttemptRecord, FailureMemory, Problem, StrategyName
 from tokenos.provider import structured_output_overhead_bytes
-from tokenos.strategies import build_prompt
+from tokenos.strategies import build_prompt, shown_attempt, strategy_memories
 
 BYTES_PER_TOKEN = 3.0
 
@@ -101,8 +101,8 @@ def compile_context(
     dropped whole; a truncated implementation would mislead more than none.
     """
     overhead = structured_output_overhead_bytes(instructions)
-    wants_code = strategy == "patchsearch-with-code" and bool(history)
-    local = list(memories)
+    wants_code = shown_attempt(strategy, history) is not None
+    local = strategy_memories(strategy, memories)
     remote = list(transferred)
 
     def render(keep_local: list, keep_code: bool, keep_remote: list) -> tuple[str, int]:

@@ -113,3 +113,18 @@ def test_benchmark_rejects_a_context_budget_that_cannot_apply(
                  "--context-budget", budget]
             )
         )
+
+
+def test_benchmark_output_cap_defaults_to_the_recorded_runs() -> None:
+    args = build_parser().parse_args(["benchmark", "--all"])
+    assert args.max_output_tokens == 4096
+    raised = build_parser().parse_args(
+        ["benchmark", "--all", "--max-output-tokens", "16384"]
+    )
+    assert raised.max_output_tokens == 16384
+
+
+def test_best_code_is_a_valid_strategy() -> None:
+    assert _strategies("full-history,patchsearch-best-code") == (
+        "full-history", "patchsearch-best-code"
+    )

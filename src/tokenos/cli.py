@@ -63,6 +63,7 @@ VALID_STRATEGIES = {
     "patchsearch-explained",
     "patchsearch-crosstask",
     "patchsearch-with-code",
+    "patchsearch-best-code",
 }
 
 
@@ -111,6 +112,13 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument("--concurrency", type=int, default=4)
     benchmark.add_argument("--budget-usd", type=float, default=10.0)
     benchmark.add_argument("--evaluator-image")
+    benchmark.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=4096,
+        help="per-request output cap, reasoning included; responses that hit it "
+        "are truncated JSON and score as invalid_output",
+    )
     benchmark.add_argument(
         "--context-budget",
         type=int,
@@ -377,6 +385,8 @@ def _preflight_config(
 
 
 def command_benchmark(args: argparse.Namespace) -> int:
+    if args.max_output_tokens <= 0:
+        raise ConfigurationError("--max-output-tokens must be positive")
     if args.context_budget is not None:
         if args.context_budget <= 0:
             raise ConfigurationError("--context-budget must be positive")
@@ -452,7 +462,10 @@ def command_benchmark(args: argparse.Namespace) -> int:
         budget_usd=args.budget_usd,
     )
     config = replace(
-        config, evaluator_image=evaluator_image, context_budget=args.context_budget
+        config,
+        evaluator_image=evaluator_image,
+        context_budget=args.context_budget,
+        max_output_tokens=args.max_output_tokens,
     )
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)

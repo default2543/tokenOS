@@ -124,3 +124,82 @@ def test_plain_patchsearch_still_carries_no_code() -> None:
 def test_with_code_variant_has_no_code_on_the_first_attempt() -> None:
     prompt = build_prompt("patchsearch-with-code", PROBLEM, 1, [])
     assert "MOST RECENT ATTEMPT" not in prompt
+
+
+def _attempt(number: int, completion: str, kind: str, failed: int | None = None):
+    from dataclasses import replace
+
+    from tokenos.models import FailureMemory
+
+    base = prior_attempt()
+    memory = FailureMemory(
+        task_id=PROBLEM.task_id,
+        kind="failure_summary",
+        content=f"{kind.upper()} at attempt {number}",
+        source_attempt=number,
+        failure_kind=kind,
+        fingerprint=f"{kind}-{number}",
+    )
+    return replace(
+        base,
+        strategy="patchsearch-best-code",
+        attempt=number,
+        completion=completion,
+        evaluation=EvaluationResult(
+            base_status="fail",
+            plus_status="fail",
+            passed=False,
+            feedback=FailureFeedback(
+                kind=kind, message="failed", failed_test_count=failed
+            ),
+        ),
+        memories=(memory,),
+    )
+
+
+def test_best_code_prefers_the_attempt_with_fewest_failing_tests() -> None:
+    history = [
+        _attempt(1, "    return 1\n", "wrong_answer", failed=1),
+        _attempt(2, "    return 2\n", "wrong_answer", failed=3),
+    ]
+    prompt = build_prompt("patchsearch-best-code", PROBLEM, 3, history)
+    assert "BEST PREVIOUS ATTEMPT (attempt 1, 1 failing test(s))" in prompt
+    assert "return 1" in prompt and "return 2" not in prompt
+
+
+def test_best_code_skips_unparsed_responses_and_their_memories() -> None:
+    history = [
+        _attempt(1, "    return 1\n", "runtime_error"),
+        _attempt(2, '{"completion": "    ret', "invalid_output"),
+    ]
+    prompt = build_prompt("patchsearch-best-code", PROBLEM, 3, history)
+    assert "BEST PREVIOUS ATTEMPT (attempt 1)" in prompt
+    assert '{"completion"' not in prompt
+    assert "INVALID_OUTPUT" not in prompt
+    assert "RUNTIME_ERROR at attempt 1" in prompt
+
+
+def test_best_code_breaks_ties_toward_the_latest_attempt() -> None:
+    history = [
+        _attempt(1, "    return 1\n", "wrong_answer", failed=2),
+        _attempt(2, "    return 2\n", "wrong_answer", failed=2),
+    ]
+    prompt = build_prompt("patchsearch-best-code", PROBLEM, 3, history)
+    assert "attempt 2, 2 failing" in prompt
+
+
+def test_best_code_shows_no_code_when_every_response_was_unparsed() -> None:
+    history = [_attempt(1, '{"compl', "invalid_output")]
+    prompt = build_prompt("patchsearch-best-code", PROBLEM, 2, history)
+    assert "PREVIOUS ATTEMPT" not in prompt
+    assert '{"compl' not in prompt
+
+
+def test_with_code_still_shows_the_latest_attempt_even_if_unparsed() -> None:
+    # The measured strategy is unchanged, so recorded prompts still replay.
+    history = [
+        _attempt(1, "    return 1\n", "wrong_answer", failed=1),
+        _attempt(2, '{"compl', "invalid_output"),
+    ]
+    prompt = build_prompt("patchsearch-with-code", PROBLEM, 3, history)
+    assert "MOST RECENT ATTEMPT (attempt 2)" in prompt

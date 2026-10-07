@@ -19,8 +19,61 @@ PATCHSEARCH_STRATEGIES = frozenset(
         "patchsearch-explained",
         "patchsearch-crosstask",
         "patchsearch-with-code",
+        "patchsearch-best-code",
     }
 )
+# Strategies that show the model one earlier implementation alongside memory.
+CODE_STRATEGIES = frozenset({"patchsearch-with-code", "patchsearch-best-code"})
+
+
+def shown_attempt(
+    strategy: StrategyName, history: Sequence[AttemptRecord]
+) -> AttemptRecord | None:
+    """The earlier implementation a code-carrying strategy shows, if any.
+
+    `patchsearch-with-code` shows the latest attempt, whatever it was.
+    `patchsearch-best-code` skips responses that never parsed -- their
+    "completion" is a truncated JSON fragment, not code -- and prefers the
+    attempt that failed the fewest tests, so a retry that fixes one test and
+    breaks another does not discard the better version. Ties go to the latest.
+    """
+    if strategy not in CODE_STRATEGIES or not history:
+        return None
+    if strategy == "patchsearch-with-code":
+        return max(history, key=lambda item: item.attempt)
+    valid = [item for item in history if _failure_kind(item) != "invalid_output"]
+    if not valid:
+        return None
+
+    def rank(item: AttemptRecord) -> tuple[int, int, int]:
+        count = _failed_test_count(item)
+        if count is None:
+            return (1, 0, -item.attempt)
+        return (0, count, -item.attempt)
+
+    return min(valid, key=rank)
+
+
+def strategy_memories(
+    strategy: StrategyName, memories: Sequence[FailureMemory]
+) -> list[FailureMemory]:
+    """Memories a strategy shows. "The response was not valid JSON" says
+    nothing about the task, so best-code drops it rather than spend a slot."""
+    if strategy == "patchsearch-best-code":
+        return [item for item in memories if item.failure_kind != "invalid_output"]
+    return list(memories)
+
+
+def _failure_kind(item: AttemptRecord) -> str | None:
+    feedback = item.evaluation.feedback
+    return None if feedback is None else feedback.kind
+
+
+def _failed_test_count(item: AttemptRecord) -> int | None:
+    feedback = item.evaluation.feedback
+    if feedback is None or feedback.kind != "wrong_answer":
+        return None
+    return getattr(feedback, "failed_test_count", None)
 
 SYSTEM_INSTRUCTIONS = """You solve standalone Python function-completion tasks.
 Return a JSON object with exactly one field named completion. Its value must be the
@@ -134,13 +187,18 @@ def build_prompt(
             ]
         else:
             selected = retrieve_memories(history)
-        if strategy == "patchsearch-with-code" and history:
-            latest = max(history, key=lambda item: item.attempt)
+        selected = strategy_memories(strategy, selected)
+        shown = shown_attempt(strategy, history)
+        if shown is not None and strategy == "patchsearch-with-code":
             sections.extend(
-                [
-                    f"MOST RECENT ATTEMPT (attempt {latest.attempt})",
-                    latest.completion,
-                ]
+                [f"MOST RECENT ATTEMPT (attempt {shown.attempt})", shown.completion]
+            )
+        elif shown is not None:
+            count = _failed_test_count(shown)
+            detail = f", {count} failing test(s)" if count is not None else ""
+            sections.extend(
+                [f"BEST PREVIOUS ATTEMPT (attempt {shown.attempt}{detail})",
+                 shown.completion]
             )
         if selected:
             sections.append("FAILURE MEMORY")
