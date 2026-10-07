@@ -20,10 +20,16 @@ PATCHSEARCH_STRATEGIES = frozenset(
         "patchsearch-crosstask",
         "patchsearch-with-code",
         "patchsearch-best-code",
+        "patchsearch-adaptive",
     }
 )
 # Strategies that show the model one earlier implementation alongside memory.
-CODE_STRATEGIES = frozenset({"patchsearch-with-code", "patchsearch-best-code"})
+CODE_STRATEGIES = frozenset(
+    {"patchsearch-with-code", "patchsearch-best-code", "patchsearch-adaptive"}
+)
+# Raw test output carried by patchsearch-adaptive. Summaries are capped at 600
+# characters and lose the traceback detail full history keeps.
+MAX_RAW_FEEDBACK_CHARS = 1500
 
 
 def shown_attempt(
@@ -44,6 +50,8 @@ def shown_attempt(
     valid = [item for item in history if _failure_kind(item) != "invalid_output"]
     if not valid:
         return None
+    if strategy == "patchsearch-adaptive":
+        return max(valid, key=lambda item: item.attempt)
 
     def rank(item: AttemptRecord) -> tuple[int, int, int]:
         count = _failed_test_count(item)
@@ -59,9 +67,44 @@ def strategy_memories(
 ) -> list[FailureMemory]:
     """Memories a strategy shows. "The response was not valid JSON" says
     nothing about the task, so best-code drops it rather than spend a slot."""
-    if strategy == "patchsearch-best-code":
+    if strategy in ("patchsearch-best-code", "patchsearch-adaptive"):
         return [item for item in memories if item.failure_kind != "invalid_output"]
     return list(memories)
+
+
+def repeat_counts(history: Sequence[AttemptRecord]) -> dict[str, int]:
+    """How many attempts produced each memory, by fingerprint."""
+    counts: dict[str, int] = {}
+    for item in history:
+        for memory in item.memories:
+            counts[memory.fingerprint] = counts.get(memory.fingerprint, 0) + 1
+    return counts
+
+
+def stuck_streak(history: Sequence[AttemptRecord]) -> int:
+    """Consecutive latest attempts that failed exactly as the latest did.
+
+    Retrieval deduplicates identical failures, which is what keeps memory
+    bounded -- but it also hides that the model is repeating itself. Full
+    history shows the repetition; this restores it in one number.
+    """
+    ordered = sorted(history, key=lambda item: item.attempt)
+    if not ordered or not ordered[-1].memories:
+        return 0
+    latest = ordered[-1].memories[0].fingerprint
+    streak = 0
+    for item in reversed(ordered):
+        if not item.memories or item.memories[0].fingerprint != latest:
+            break
+        streak += 1
+    return streak
+
+
+def _bounded_feedback(item: AttemptRecord) -> str:
+    text = _feedback_text(item.evaluation.feedback)
+    if len(text) <= MAX_RAW_FEEDBACK_CHARS:
+        return text
+    return text[: MAX_RAW_FEEDBACK_CHARS - 3].rstrip() + "..."
 
 
 def _failure_kind(item: AttemptRecord) -> str | None:
@@ -193,6 +236,15 @@ def build_prompt(
             sections.extend(
                 [f"MOST RECENT ATTEMPT (attempt {shown.attempt})", shown.completion]
             )
+        elif shown is not None and strategy == "patchsearch-adaptive":
+            sections.extend(
+                [
+                    f"MOST RECENT VALID ATTEMPT (attempt {shown.attempt})",
+                    shown.completion,
+                    f"Attempt {shown.attempt} test feedback:",
+                    _bounded_feedback(shown),
+                ]
+            )
         elif shown is not None:
             count = _failed_test_count(shown)
             detail = f", {count} failing test(s)" if count is not None else ""
@@ -200,15 +252,20 @@ def build_prompt(
                 [f"BEST PREVIOUS ATTEMPT (attempt {shown.attempt}{detail})",
                  shown.completion]
             )
+        counts = (
+            repeat_counts(history) if strategy == "patchsearch-adaptive" else {}
+        )
         if selected:
             sections.append("FAILURE MEMORY")
             for memory in selected:
+                seen = counts.get(memory.fingerprint, 1)
+                times = f" (failed this way {seen} times)" if seen > 1 else ""
                 if memory.kind == "executable_constraint":
                     if strategy == "patchsearch-explained" and memory.explanation:
                         sections.append(f"Explanation: {memory.explanation}")
-                    sections.append(f"Constraint: {memory.content}")
+                    sections.append(f"Constraint{times}: {memory.content}")
                 else:
-                    sections.append(f"Summary: {memory.content}")
+                    sections.append(f"Summary{times}: {memory.content}")
             sections.append(
                 "Use this bounded failure memory to produce a complete corrected "
                 "completion, not a patch or explanation. Satisfy every executable "
@@ -216,6 +273,14 @@ def build_prompt(
             )
         else:
             sections.append("There is no validated failure memory from previous attempts.")
+        streak = stuck_streak(history) if strategy == "patchsearch-adaptive" else 0
+        if streak >= 2:
+            sections.append(
+                f"STUCK: the last {streak} attempts failed in exactly the same way. "
+                "Small edits to that approach are not working. Re-read the task "
+                "and the failing test, then write the function with a different "
+                "approach."
+            )
         if transferred:
             # Labelled separately and by source task: these describe a
             # different problem and are hints, not constraints on this one.

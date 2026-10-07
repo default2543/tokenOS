@@ -65,6 +65,7 @@ VALID_STRATEGIES = {
     "patchsearch-crosstask",
     "patchsearch-with-code",
     "patchsearch-best-code",
+    "patchsearch-adaptive",
 }
 
 

@@ -14,6 +14,7 @@ StrategyName = Literal[
     "patchsearch-crosstask",
     "patchsearch-with-code",
     "patchsearch-best-code",
+    "patchsearch-adaptive",
 ]
 FailureKind = Literal[
     "wrong_answer",

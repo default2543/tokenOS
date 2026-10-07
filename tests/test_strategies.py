@@ -232,3 +232,54 @@ def test_sliding_window_without_a_budget_matches_full_history() -> None:
     history = [_attempt(1, "    return 1\n", "wrong_answer", failed=1)]
     window = compile_context("sliding-window", PROBLEM, 2, history).prompt
     assert window == build_prompt("full-history", PROBLEM, 2, history)
+
+
+def _same_failure(number: int, completion: str = "    return 1\n"):
+    from dataclasses import replace
+
+    record = _attempt(number, completion, "wrong_answer", failed=2)
+    memory = replace(record.memories[0], content="WRONG ANSWER: same", fingerprint="f")
+    return replace(record, memories=(memory,))
+
+
+def test_adaptive_flags_a_repeated_failure_as_stuck() -> None:
+    history = [_same_failure(1), _same_failure(2), _same_failure(3)]
+    prompt = build_prompt("patchsearch-adaptive", PROBLEM, 4, history)
+    assert "STUCK: the last 3 attempts failed in exactly the same way" in prompt
+    assert "Summary (failed this way 3 times): WRONG ANSWER: same" in prompt
+
+
+def test_adaptive_is_not_stuck_after_a_different_failure() -> None:
+    history = [_same_failure(1), _attempt(2, "    return 2\n", "runtime_error")]
+    prompt = build_prompt("patchsearch-adaptive", PROBLEM, 3, history)
+    assert "STUCK" not in prompt
+    assert "failed this way" not in prompt
+
+
+def test_adaptive_carries_the_latest_valid_code_and_its_raw_feedback() -> None:
+    history = [
+        _attempt(1, "    return 1\n", "wrong_answer", failed=1),
+        _attempt(2, '{"compl', "invalid_output"),
+    ]
+    prompt = build_prompt("patchsearch-adaptive", PROBLEM, 3, history)
+    assert "MOST RECENT VALID ATTEMPT (attempt 1)" in prompt
+    assert "Attempt 1 test feedback:\n\nFailure kind: wrong_answer" in prompt
+    assert '{"compl' not in prompt
+
+
+def test_adaptive_bounds_raw_feedback() -> None:
+    from dataclasses import replace
+
+    from tokenos.strategies import MAX_RAW_FEEDBACK_CHARS
+
+    record = _attempt(1, "    return 1\n", "wrong_answer", failed=1)
+    long = replace(
+        record,
+        evaluation=replace(
+            record.evaluation,
+            feedback=replace(record.evaluation.feedback, message="x" * 10_000),
+        ),
+    )
+    prompt = build_prompt("patchsearch-adaptive", PROBLEM, 2, [long])
+    assert "x" * MAX_RAW_FEEDBACK_CHARS not in prompt
+    assert "..." in prompt
