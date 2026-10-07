@@ -970,6 +970,40 @@ tokenos benchmark --dataset bigcodebench-hard --all --skip-unviable-tasks \
 which pairs with-code@1000 against full history in the same run and against
 the two unbounded with-code runs (21/32, 19/32).
 
+### Binding budget — measured, 2026-10-07
+
+Run `20261007T033256Z-4affde`, the command above ($2.16).
+
+| strategy | solved | tokens | tokens/solve |
+|---|---|---|---|
+| full-history | 24/32 | 356,281 | 14,845 |
+| with-code @ 1,000 | 16/32 | 285,718 | 17,857 |
+| with-code, unbounded (two earlier runs) | 21/32, 19/32 | 264,267 / 296,118 | 12,584 / 15,585 |
+
+**A 1,000-token budget costs correctness, and saves nothing.** Against full
+history in the same run, with-code@1000 lost 8 tasks and won none (McNemar
+exact p = 0.008), the first significant correctness difference in the
+project. Against the unbounded with-code runs it lost 5 and 3 tasks and never
+solved one they missed. It used 19.8% fewer tokens than full history, but 20%
+*more per solve*, and no fewer tokens than unbounded with-code: failed tasks
+run all five attempts, so the attempts the budget trims are paid for again in
+extra retries.
+
+**What the budget cut was the code.** Code was dropped on 55 of 73 retries and
+memories on 6. Retry prompts stayed at 534–577 input tokens against 876–980
+unbounded, i.e. close to plain PatchSearch, and 16/32 is in line with plain
+PatchSearch's 18/32. The ablation predicted this: the latest code is worth
+about three tasks, and it is the first thing a tight budget removes.
+
+**Consequences.** Full history scored 24/32 here against 22 and 21 before, so
+part of the 8-task gap is run noise, but the zero discordant tasks in the
+budget's favour across three comparisons is not. The default budget of 4,000
+stays: it never binds on this benchmark. A budget below the code's size should
+be treated as a different, weaker strategy rather than a cheaper version of the
+same one. Whether the compiler should give up older summaries before the code
+is open; plain PatchSearch (memory, no code) and with-code differ mainly in the
+code, so the evidence leans that way.
+
 ---
 
 ## Phase 6 — Large Evaluation

@@ -240,9 +240,12 @@ $ tokenos sweep 20260901T024612Z-bf19df --budgets 4000,1500,1000
 ```
 
 At the default budget of 4,000 tokens nothing is cut, because bounded memory
-peaks at 1,775 tokens. Tighter budgets drop the code first. That code was
-worth three solved tasks, so whether cutting it costs correctness still has to
-be measured in a live run.
+peaks at 1,775 tokens. Tighter budgets drop the code first, and a live run
+shows that costs correctness. With a budget of 1,000 tokens (run
+`20261007T033256Z-4affde`), with-code solved 16/32 against full history's
+24/32 in the same run (8 tasks lost, none gained, p = 0.008). It also solved
+fewer than either unbounded run (21/32 and 19/32) and cost 20% more tokens per
+solve than full history. Keep the budget above the size of the code.
 
 ## Setup
 
@@ -394,7 +397,7 @@ TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 python -m pytest -m docker
 - [x] **Phase 5:** `Runtime` and the budget-enforcing context compiler
 - [x] Replicate the headline result: token saving holds; correctness gap is not significant
 - [ ] More viable tasks (a fuller evaluator image), so a 3-in-64 gap can be resolved
-- [ ] Measure what a binding budget costs in correctness (with-code at 1,000 tokens vs unbounded)
+- [x] Measure what a binding budget costs: at 1,000 tokens with-code drops to 16/32 (vs 24/32 full history, p = 0.008)
 - [ ] A benchmark with recurring failure modes, so cross-task allocation can be tested fairly
 - [ ] **Phase 6:** full-benchmark evaluation with tables and graphs
 
