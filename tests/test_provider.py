@@ -2,7 +2,7 @@ from dataclasses import replace
 from types import SimpleNamespace
 
 from tokenos.models import RunConfig
-from tokenos.provider import AzureOpenAIProvider
+from tokenos.provider import AzureOpenAIProvider, base_url
 
 
 class Responses:
@@ -107,3 +107,88 @@ def test_sdk_connection_errors_are_retried_not_fatal() -> None:
     ).generate("prompt")
     assert responses.calls == 3
     assert len(sleeps) == 2
+
+
+class ChatCompletions:
+    def __init__(self, failures: int = 0) -> None:
+        self.failures = failures
+        self.calls = []
+
+    def create(self, **kwargs):
+        self.calls.append(kwargs)
+        if self.failures:
+            self.failures -= 1
+            error = RuntimeError("throttled")
+            error.status_code = 429
+            raise error
+        return SimpleNamespace(
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(
+                        content='{"completion":"    return True"}'
+                    )
+                )
+            ],
+            id="chat-1",
+            model="qwen3-coder",
+            _request_id="req-1",
+            usage=SimpleNamespace(
+                prompt_tokens=100,
+                completion_tokens=20,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=10),
+                completion_tokens_details=None,
+            ),
+        )
+
+
+def _chat_config() -> RunConfig:
+    return RunConfig(
+        run_id="run",
+        strategies=("no-memory",),
+        task_ids=("HumanEval/0",),
+        dataset_path="data.gz",
+        azure_endpoint="https://example",
+        azure_deployment="qwen3-coder",
+        provider_api="chat",
+    )
+
+
+def test_chat_provider_sends_structured_chat_request() -> None:
+    chat = ChatCompletions()
+    client = SimpleNamespace(chat=SimpleNamespace(completions=chat))
+    result = AzureOpenAIProvider(_chat_config(), client=client).generate(
+        "prompt", instructions="be terse"
+    )
+    call = chat.calls[0]
+    assert call["model"] == "qwen3-coder"
+    assert call["messages"] == [
+        {"role": "system", "content": "be terse"},
+        {"role": "user", "content": "prompt"},
+    ]
+    assert call["response_format"]["json_schema"]["strict"] is True
+    assert "reasoning" not in call
+    assert result.output_text == '{"completion":"    return True"}'
+    assert result.usage.input_tokens == 100
+    assert result.usage.output_tokens == 20
+    assert result.usage.cached_input_tokens == 10
+    assert result.usage.reasoning_tokens == 0
+    assert result.resolved_model == "qwen3-coder"
+
+
+def test_chat_provider_retries_throttling() -> None:
+    chat = ChatCompletions(failures=1)
+    client = SimpleNamespace(chat=SimpleNamespace(completions=chat))
+    AzureOpenAIProvider(_chat_config(), client=client, sleeper=lambda _: None).generate(
+        "prompt"
+    )
+    assert len(chat.calls) == 2
+
+
+def test_base_url_keeps_explicit_v1_endpoints() -> None:
+    assert base_url("https://res.openai.azure.com/") == (
+        "https://res.openai.azure.com/openai/v1/"
+    )
+    assert base_url("https://openrouter.ai/api/v1") == "https://openrouter.ai/api/v1/"
+    assert base_url("https://res.services.ai.azure.com/openai/v1/") == (
+        "https://res.services.ai.azure.com/openai/v1/"
+    )

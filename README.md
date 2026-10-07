@@ -7,7 +7,7 @@ Learn from every failed attempt without replaying all of them.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-145%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-151%20passing-brightgreen)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-3-blue)
 
 [Results](#results) · [How it works](#how-it-works) · [Quickstart](#quickstart) ·
@@ -166,7 +166,7 @@ token; dividing by 3.0 overestimates every one of them.
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m pytest            # 145 tests, no network or Docker needed
+python -m pytest            # 151 tests, no network or Docker needed
 ```
 
 ### Use the Runtime with your own model and tests
@@ -287,6 +287,11 @@ export AZURE_OPENAI_DEPLOYMENT=tokenos-gpt-54-mini
 export AZURE_OPENAI_INPUT_USD_PER_MTOK=...
 export AZURE_OPENAI_CACHED_INPUT_USD_PER_MTOK=...
 export AZURE_OPENAI_OUTPUT_USD_PER_MTOK=...
+
+# Open models: any OpenAI-compatible chat endpoint (a Foundry serverless
+# deployment, OpenRouter, vLLM). An endpoint ending in /v1 is used as given.
+export TOKENOS_PROVIDER_API=chat
+export TOKENOS_MODEL_NAME=qwen3-coder-30b-a3b
 
 tokenos doctor          # local checks, no tokens
 tokenos doctor --live   # one small request

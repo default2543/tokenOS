@@ -219,6 +219,9 @@ class RunConfig:
     azure_endpoint: str = ""
     azure_deployment: str = "tokenos-gpt-54-mini"
     azure_auth: Literal["api_key", "entra"] = "api_key"
+    # "responses" for Azure OpenAI models; "chat" for any OpenAI-compatible
+    # chat-completions endpoint (Foundry open models, OpenRouter, vLLM, ...).
+    provider_api: Literal["responses", "chat"] = "responses"
     reasoning_effort: str = "medium"
     max_output_tokens: int = 4096
     max_attempts: int = 5
