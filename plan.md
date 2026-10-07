@@ -1004,6 +1004,37 @@ same one. Whether the compiler should give up older summaries before the code
 is open; plain PatchSearch (memory, no code) and with-code differ mainly in the
 code, so the evidence leans that way.
 
+### Ten attempts, uncapped output — 2026-10-07
+
+Run `20261007T045053Z-f3837c`: `--max-attempts 10 --max-output-tokens 16384`,
+three strategies ($6.45).
+
+**The output cap was the invalid-output problem.** Every `invalid_output` in
+the earlier runs (41, 38, 33 per run) had hit the 4,096-token output cap: the
+reasoning model spent it before closing the JSON. At 16,384 there was 1 invalid
+response in 405 calls.
+
+| strategy | solved | input tokens | total tokens | tokens/solve |
+|---|---|---|---|---|
+| full-history | 26/32 | 365,602 | 829,645 | 31,909 |
+| with-code | 24/32 | 122,035 (-67%) | 535,253 (-35%) | 22,302 (-30%) |
+| best-code | 24/32 | 125,552 | 579,369 | 24,140 |
+
+Mean input tokens at attempt 10: full history 7,688, with-code 1,132. With
+more attempts the saving grows, as the thesis predicts. Correctness still
+trails by two (2 full-history-only tasks, 0 the other way). Best-code, which
+shows the attempt with the fewest failing tests instead of the latest, did not
+help (4 / 2 against full history).
+
+**Why bounded memory loses the tasks it loses: it gets stuck.** On
+BigCodeBench/326 with-code failed the same three tests ten times running; on
+785 it raised the same `FileNotFoundError` seven times. Retrieval deduplicates
+identical failures, so the model sees one calm summary and makes another small
+edit. Full history shows the repetition. `patchsearch-adaptive` restores it:
+repeat counts on memories, an explicit STUCK directive after two identical
+failures, and the latest valid attempt's raw test output (bounded to 1,500
+characters).
+
 ---
 
 ## Phase 6 — Large Evaluation
