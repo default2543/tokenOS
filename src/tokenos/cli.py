@@ -59,6 +59,7 @@ DATASET_DEFAULTS = {
 VALID_STRATEGIES = {
     "no-memory",
     "full-history",
+    "sliding-window",
     "patchsearch",
     "patchsearch-explained",
     "patchsearch-crosstask",
@@ -390,11 +391,17 @@ def command_benchmark(args: argparse.Namespace) -> int:
     if args.context_budget is not None:
         if args.context_budget <= 0:
             raise ConfigurationError("--context-budget must be positive")
-        if not PATCHSEARCH_STRATEGIES.intersection(_strategies(args.strategies)):
+        if not (PATCHSEARCH_STRATEGIES | {"sliding-window"}).intersection(
+            _strategies(args.strategies)
+        ):
             raise ConfigurationError(
-                "--context-budget only affects bounded-memory strategies; add "
-                "one to --strategies or drop the flag"
+                "--context-budget only affects bounded-memory strategies and "
+                "sliding-window; add one to --strategies or drop the flag"
             )
+    elif "sliding-window" in _strategies(args.strategies):
+        raise ConfigurationError(
+            "sliding-window needs --context-budget; without one it is full-history"
+        )
     default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
     dataset_path = args.dataset_path or default_path
     evaluator_image = args.evaluator_image or default_image

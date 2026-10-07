@@ -8,6 +8,7 @@ from typing import Any, Literal
 StrategyName = Literal[
     "no-memory",
     "full-history",
+    "sliding-window",
     "patchsearch",
     "patchsearch-explained",
     "patchsearch-crosstask",

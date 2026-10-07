@@ -128,3 +128,13 @@ def test_best_code_is_a_valid_strategy() -> None:
     assert _strategies("full-history,patchsearch-best-code") == (
         "full-history", "patchsearch-best-code"
     )
+
+
+def test_sliding_window_requires_a_context_budget(tmp_path) -> None:
+    with pytest.raises(ConfigurationError, match="sliding-window needs"):
+        command_benchmark(
+            build_parser().parse_args(
+                ["benchmark", "--dataset-path", str(tmp_path / "missing.gz"),
+                 "--task-ids", "HumanEval/0", "--strategies", "sliding-window"]
+            )
+        )

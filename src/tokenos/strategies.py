@@ -150,7 +150,7 @@ def build_prompt(
         sections.append(
             "Previous attempts are unavailable. Produce a fresh, independent completion."
         )
-    elif strategy == "full-history":
+    elif strategy in ("full-history", "sliding-window"):
         if history:
             sections.append("PREVIOUS ATTEMPTS")
             for item in history:

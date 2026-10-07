@@ -59,11 +59,15 @@ class CompiledContext:
     dropped_memories: tuple[FailureMemory, ...] = ()
     dropped_transferred: tuple[FailureMemory, ...] = ()
     dropped_code: bool = False
+    dropped_attempts: int = 0
 
     @property
     def trimmed(self) -> bool:
         return bool(
-            self.dropped_memories or self.dropped_transferred or self.dropped_code
+            self.dropped_memories
+            or self.dropped_transferred
+            or self.dropped_code
+            or self.dropped_attempts
         )
 
     def to_dict(self) -> dict:
@@ -77,6 +81,7 @@ class CompiledContext:
             "dropped_memories": len(self.dropped_memories),
             "dropped_transferred": len(self.dropped_transferred),
             "dropped_code": self.dropped_code,
+            "dropped_attempts": self.dropped_attempts,
         }
 
 
@@ -101,6 +106,10 @@ def compile_context(
     dropped whole; a truncated implementation would mislead more than none.
     """
     overhead = structured_output_overhead_bytes(instructions)
+    if strategy == "sliding-window":
+        return _compile_window(
+            problem, attempt, history, budget_tokens, overhead, max_attempts
+        )
     wants_code = shown_attempt(strategy, history) is not None
     local = strategy_memories(strategy, memories)
     remote = list(transferred)
@@ -172,4 +181,53 @@ def compile_context(
         dropped_memories=tuple(item for item in local if item not in kept_local),
         dropped_transferred=tuple(item for item in remote if item not in kept_remote),
         dropped_code=wants_code and not keep_code,
+    )
+
+
+def _compile_window(
+    problem: Problem,
+    attempt: int,
+    history: Sequence[AttemptRecord],
+    budget_tokens: int | None,
+    overhead: int,
+    max_attempts: int,
+) -> CompiledContext:
+    """Full history, cut to the newest attempts that fit.
+
+    This is what a fixed context window does to the naive strategy, so it is
+    the fair baseline for bounded memory at the same budget. Attempts are kept
+    or dropped whole, newest first.
+    """
+
+    def render(kept: Sequence[AttemptRecord]) -> tuple[str, int]:
+        prompt = build_prompt(
+            "sliding-window", problem, attempt, kept, max_attempts=max_attempts
+        )
+        return prompt, tokens_for_bytes(len(prompt.encode("utf-8")) + overhead)
+
+    _, required = render(())
+    if budget_tokens is not None and required > budget_tokens:
+        raise ContextBudgetError(
+            f"{problem.task_id} needs {required} tokens before any history, "
+            f"over the {budget_tokens}-token budget"
+        )
+    ordered = sorted(history, key=lambda item: item.attempt)
+    kept = ordered
+    if budget_tokens is not None:
+        kept = []
+        for item in reversed(ordered):
+            trial = [item, *kept]
+            if render(trial)[1] > budget_tokens:
+                break
+            kept = trial
+    prompt, tokens = render(kept)
+    return CompiledContext(
+        prompt=prompt,
+        estimated_tokens=tokens,
+        budget_tokens=budget_tokens,
+        required_tokens=required,
+        memories=(),
+        transferred=(),
+        included_code=bool(kept),
+        dropped_attempts=len(ordered) - len(kept),
     )

@@ -139,10 +139,14 @@ class BenchmarkRunner:
             store = self.memory_store if strategy == "patchsearch-crosstask" else None
             instructions = system_instructions(problem.benchmark)
             context = None
-            if patch_strategy:
-                memories, transferred = retrieve_with_store(problem, history, store)
-                # Only bounded-memory strategies are compiled: full history has
-                # no budget-safe form, which is the point of the comparison.
+            if patch_strategy or strategy == "sliding-window":
+                memories, transferred = (
+                    retrieve_with_store(problem, history, store)
+                    if patch_strategy
+                    else ([], [])
+                )
+                # Full history is never compiled: it is the unbounded control.
+                # Its budgeted form is `sliding-window`.
                 try:
                     context = compile_context(
                         strategy,

@@ -203,3 +203,32 @@ def test_with_code_still_shows_the_latest_attempt_even_if_unparsed() -> None:
     ]
     prompt = build_prompt("patchsearch-with-code", PROBLEM, 3, history)
     assert "MOST RECENT ATTEMPT (attempt 2)" in prompt
+
+
+def test_sliding_window_keeps_the_newest_attempts_that_fit() -> None:
+    from tokenos.compiler import compile_context
+
+    history = [
+        _attempt(n, f"    return {n}  # {'x' * 300}\n", "wrong_answer", failed=1)
+        for n in (1, 2, 3)
+    ]
+    unbounded = compile_context("sliding-window", PROBLEM, 4, history)
+    assert unbounded.dropped_attempts == 0
+    assert all(f"Attempt {n} completion" in unbounded.prompt for n in (1, 2, 3))
+
+    one_less = unbounded.estimated_tokens - 1
+    bounded = compile_context(
+        "sliding-window", PROBLEM, 4, history, budget_tokens=one_less
+    )
+    assert bounded.dropped_attempts == 1
+    assert "Attempt 1 completion" not in bounded.prompt
+    assert "Attempt 3 completion" in bounded.prompt
+    assert bounded.estimated_tokens <= one_less
+
+
+def test_sliding_window_without_a_budget_matches_full_history() -> None:
+    from tokenos.compiler import compile_context
+
+    history = [_attempt(1, "    return 1\n", "wrong_answer", failed=1)]
+    window = compile_context("sliding-window", PROBLEM, 2, history).prompt
+    assert window == build_prompt("full-history", PROBLEM, 2, history)
