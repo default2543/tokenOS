@@ -8,6 +8,7 @@ from typing import Protocol, Sequence
 
 from tokenos.artifacts import EventStore
 from tokenos.budget import BudgetManager
+from tokenos.compiler import ContextBudgetError, compile_context
 from tokenos.config import utc_now
 from tokenos.metrics import summarize
 from tokenos.models import (
@@ -20,17 +21,55 @@ from tokenos.models import (
     StrategyName,
 )
 from tokenos.provider import ModelProviderError, ModelResponse
-from tokenos.patchsearch.extractor import extract_patch
-from tokenos.patchsearch.retriever import retrieve_patches
-from tokenos.strategies import build_prompt, parse_completion
+from tokenos.patchsearch.extractor import extract_memory
+from tokenos.patchsearch.retriever import retrieve_with_store
+from tokenos.store import MemoryStore
+from tokenos.strategies import (
+    PATCHSEARCH_STRATEGIES,
+    build_prompt,
+    parse_completion,
+    system_instructions,
+)
 
 
 class Provider(Protocol):
-    def generate(self, prompt: str) -> ModelResponse: ...
+    def generate(
+        self, prompt: str, *, instructions: str | None = None
+    ) -> ModelResponse: ...
 
 
 class Evaluator(Protocol):
     def evaluate(self, problem: Problem, solution: str) -> EvaluationResult: ...
+
+
+def score_output(
+    problem: Problem, output_text: str, evaluator: Evaluator
+) -> tuple[str, str, EvaluationResult, float]:
+    """Parse a model response and evaluate it.
+
+    Returns the completion, the full solution, the evaluation, and evaluation
+    latency. A malformed response is a failed attempt with `invalid_output`
+    evidence rather than an error, because it is the model's mistake; evaluator
+    failures propagate, because they are infrastructure's.
+    """
+    try:
+        completion = parse_completion(output_text)
+    except ValueError as exc:
+        return output_text, problem.prompt, EvaluationResult(
+            base_status="fail",
+            plus_status="fail",
+            passed=False,
+            feedback=FailureFeedback(
+                kind="invalid_output",
+                message=str(exc),
+                benchmark=problem.benchmark,
+                provenance="tokenos-response-parser",
+            ),
+        ), 0.0
+    solution = problem.prompt + completion
+    started = time.monotonic()
+    evaluation = evaluator.evaluate(problem, solution)
+    return completion, solution, evaluation, time.monotonic() - started
 
 
 class BenchmarkRunner:
@@ -40,11 +79,15 @@ class BenchmarkRunner:
         provider: Provider,
         evaluator: Evaluator,
         store: EventStore,
+        memory_store: MemoryStore | None = None,
     ) -> None:
         self.config = config
         self.provider = provider
         self.evaluator = evaluator
         self.store = store
+        # Frozen for the run's duration: a task's context must not depend on
+        # which other tasks a thread pool happened to finish first.
+        self.memory_store = memory_store
         self.budget = BudgetManager(config, committed_usd=store.committed_cost())
         self._records_lock = threading.Lock()
         self._records = store.completed_attempts()
@@ -92,16 +135,53 @@ class BenchmarkRunner:
             return
         next_attempt = max((item.attempt for item in history), default=0) + 1
         for attempt in range(next_attempt, self.config.max_attempts + 1):
-            patches = retrieve_patches(history) if strategy == "patchsearch" else []
-            prompt = build_prompt(
-                strategy,
-                problem,
-                attempt,
-                history,
-                max_attempts=self.config.max_attempts,
-                patches=patches,
-            )
-            reservation = self.budget.acquire(prompt)
+            patch_strategy = strategy in PATCHSEARCH_STRATEGIES
+            store = self.memory_store if strategy == "patchsearch-crosstask" else None
+            instructions = system_instructions(problem.benchmark)
+            context = None
+            if patch_strategy or strategy == "sliding-window":
+                memories, transferred = (
+                    retrieve_with_store(problem, history, store)
+                    if patch_strategy
+                    else ([], [])
+                )
+                # Full history is never compiled: it is the unbounded control.
+                # Its budgeted form is `sliding-window`.
+                try:
+                    context = compile_context(
+                        strategy,
+                        problem,
+                        attempt,
+                        history,
+                        memories=memories,
+                        transferred=transferred,
+                        budget_tokens=self.config.context_budget,
+                        instructions=instructions,
+                        max_attempts=self.config.max_attempts,
+                    )
+                except ContextBudgetError as exc:
+                    self._stop_reason = "context_budget_exceeded"
+                    self.store.append(
+                        "context_budget_exceeded",
+                        task_id=problem.task_id,
+                        strategy=strategy,
+                        attempt=attempt,
+                        error=str(exc),
+                    )
+                    return
+                prompt = context.prompt
+                memories = list(context.memories)
+                transferred = list(context.transferred)
+            else:
+                memories, transferred = [], []
+                prompt = build_prompt(
+                    strategy,
+                    problem,
+                    attempt,
+                    history,
+                    max_attempts=self.config.max_attempts,
+                )
+            reservation = self.budget.acquire(prompt, instructions)
             if reservation is None:
                 self._stop_reason = "budget_exhausted"
                 self.store.append(
@@ -118,10 +198,11 @@ class BenchmarkRunner:
                 attempt=attempt,
                 prompt=prompt,
                 reserved_cost_usd=reservation.amount_usd,
+                context=None if context is None else context.to_dict(),
             )
             total_started = time.monotonic()
             try:
-                response = self.provider.generate(prompt)
+                response = self.provider.generate(prompt, instructions=instructions)
             except Exception as exc:
                 self.budget.release(reservation)
                 self._stop_reason = "provider_error"
@@ -135,22 +216,8 @@ class BenchmarkRunner:
                 return
             cost = self.budget.reconcile(reservation, response.usage)
             try:
-                completion = parse_completion(response.output_text)
-                solution = problem.prompt + completion
-                eval_started = time.monotonic()
-                evaluation = self.evaluator.evaluate(problem, solution)
-                eval_latency = time.monotonic() - eval_started
-            except ValueError as exc:
-                completion = response.output_text
-                solution = problem.prompt
-                eval_latency = 0.0
-                evaluation = EvaluationResult(
-                    base_status="fail",
-                    plus_status="fail",
-                    passed=False,
-                    feedback=FailureFeedback(
-                        kind="invalid_output", message=str(exc)
-                    ),
+                completion, solution, evaluation, eval_latency = score_output(
+                    problem, response.output_text, self.evaluator
                 )
             except Exception as exc:
                 self._stop_reason = "evaluator_error"
@@ -185,11 +252,18 @@ class BenchmarkRunner:
                 created_at=utc_now(),
                 resolved_model=response.resolved_model,
                 patches=(),
+                memories=(),
+                retrieved_memories=tuple(memories) + tuple(transferred),
             )
-            if strategy == "patchsearch" and not evaluation.passed:
-                patch = extract_patch(problem, evaluation.feedback, attempt)
-                if patch is not None:
-                    record = replace(record, patches=(patch,))
+            if patch_strategy and not evaluation.passed:
+                memory = extract_memory(
+                    problem,
+                    evaluation.feedback,
+                    attempt,
+                    include_explanation=strategy == "patchsearch-explained",
+                )
+                if memory is not None:
+                    record = replace(record, memories=(memory,))
             with self._records_lock:
                 self._records.append(record)
             self.store.append("attempt_completed", record=record.to_dict())

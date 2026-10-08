@@ -43,6 +43,8 @@ def config_from_environment(
     task_ids: tuple[str, ...],
     dataset_path: Path,
     dataset_sha256: str,
+    dataset_name: str = "humaneval-plus",
+    dataset_version: str = "v0.1.10",
     max_attempts: int = 5,
     concurrency: int = 4,
     budget_usd: float = 10.0,
@@ -58,6 +60,9 @@ def config_from_environment(
         raise ConfigurationError("AZURE_OPENAI_AUTH must be api_key or entra")
     if auth == "api_key" and not source.get("AZURE_OPENAI_API_KEY", "").strip():
         raise ConfigurationError("AZURE_OPENAI_API_KEY is required for api_key auth")
+    provider_api = source.get("TOKENOS_PROVIDER_API", "responses").strip().lower()
+    if provider_api not in {"responses", "chat"}:
+        raise ConfigurationError("TOKENOS_PROVIDER_API must be responses or chat")
     if max_attempts < 1 or concurrency < 1 or budget_usd <= 0:
         raise ConfigurationError("attempts, concurrency, and budget must be positive")
 
@@ -66,12 +71,18 @@ def config_from_environment(
         strategies=strategies,
         task_ids=task_ids,
         dataset_path=str(dataset_path),
+        dataset_name=dataset_name,
+        dataset_version=dataset_version,
         dataset_sha256=dataset_sha256,
         azure_endpoint=endpoint,
         azure_deployment=source.get(
             "AZURE_OPENAI_DEPLOYMENT", "tokenos-gpt-54-mini"
         ).strip(),
         azure_auth=auth,  # type: ignore[arg-type]
+        provider_api=provider_api,  # type: ignore[arg-type]
+        model_name=source.get("TOKENOS_MODEL_NAME", "").strip() or "gpt-5.4-mini",
+        model_version=source.get("TOKENOS_MODEL_VERSION", "").strip()
+        or "2026-03-17",
         max_attempts=max_attempts,
         concurrency=concurrency,
         budget_usd=budget_usd,

@@ -614,6 +614,93 @@ If PatchSearch cannot reduce tokens while maintaining reasonable correctness, in
 
 ---
 
+### Phase 2 outcome — measured, 2026-08-31
+
+**Gate:** reduce tokens while maintaining reasonable correctness.
+
+**HumanEval+ (n=100, three runs): passed on tokens, no correctness signal.**
+PatchSearch cut tokens 12–28% per solved problem at parity solve@5 (0.96–0.97).
+But the benchmark is saturated at ~0.97, so there is no headroom in which a
+memory strategy could demonstrate a correctness benefit. Paired solve deltas
+were 0, 0, and −4. Treat HumanEval+ as a regression guard, not evidence.
+
+**BigCodeBench-Hard: extraction coverage is structurally zero.**
+This is a property of the code, not a measurement. `extract_memory` emits an
+`executable_constraint` only when evidence carries both a `function_call` and
+an `expected_value` observation marked trusted. Only the HumanEval+ evaluator
+ever sets `trusted`; BigCodeBench emits unittest tracebacks, which carry no
+oracle `(input, expected)` pair. So every BigCodeBench failure becomes a
+bounded `failure_summary`, and PatchSearch degenerates to lossy compression of
+full-history — one sentence against prior code plus a full traceback.
+
+Three defects were masking how that degraded strategy actually performs, all
+fixed before the deciding run:
+
+* Assertion messages were recorded as `actual_value`, so memory claimed the
+  candidate "returned" a comparison. unittest's 80-character repr elision then
+  deleted the region distinguishing expected from actual.
+* Candidate subprocesses wrote to file descriptor 1, corrupting the evaluator's
+  result JSON. This biased against every solution that shells out.
+* `openai.APIConnectionError` was classified non-retryable, ending a whole
+  trajectory on any transient network fault.
+
+A preflight pass now excludes tasks whose own reference solution fails in the
+evaluator image, so a broken task cannot be counted against a strategy.
+
+**Result: PatchSearch loses on correctness and does not save tokens per unit
+of work.** Run `20260831T133412Z-b22fb4`, all 32 preflight-viable
+BigCodeBench-Hard tasks, five attempts, no infrastructure failures.
+
+| strategy | solve@1 | solve@5 | solved | tokens | tokens/solve |
+|---|---|---|---|---|---|
+| full-history | 0.281 | **0.750** | 24/32 | 329,322 | **13,722** |
+| patchsearch | 0.281 | 0.500 | 16/32 | 282,632 | 17,664 (+28.7%) |
+| patchsearch-explained | 0.219 | 0.531 | 17/32 | 263,602 | 15,506 (+13.0%) |
+
+PatchSearch solved eight tasks fewer than full-history and solved none that
+full-history missed. Eight discordant pairs, all one direction: McNemar exact
+p = 0.0078.
+
+The token result inverts under normalization, which is the finding that matters
+most. PatchSearch used 14.2% fewer raw tokens, but it also solved a third fewer
+problems, so **per solved problem it cost 28.7% more**. A compression number
+quoted without a correctness denominator is not a saving; it is partly a record
+of giving up earlier.
+
+**Correction, after replication.** The solve@1 spread suggested run-to-run
+noise of one to two tasks. Repeating the identical configuration showed it is
+larger: full-history moved 24 -> 21 and PatchSearch 16 -> 19, a three-task swing
+each, and the same comparison gave p = 0.0078 in one run and p = 0.625 in the
+next. A single run's p-value overstates what one run supports. Pooled across
+both, the direction holds -- 11 discordant pairs to 1, p = 0.0063 -- but any
+future single-run claim should be treated as provisional until replicated.
+
+### Consequences for the thesis
+
+The hypothesis in section 3 is too broad as stated. What the evidence supports
+is narrower and more useful:
+
+> Compact executable memory pays where an oracle exposes counterexamples.
+> Where a benchmark reports only unittest diagnostics, no extraction is
+> possible, and bounded summaries carry less than the history they replace.
+
+That boundary — *when* compressed memory pays, and why — is the honest result
+of Phase 2 and should be what the project claims. Section 20's "particularly
+strong result" framing assumes a win that the harder benchmark does not
+support; the finding is a condition, not a defeat.
+
+### Cut from later phases
+
+**Explained PatchSearch is discontinued** — but not because it is worse than
+plain PatchSearch. The two are indistinguishable from each other: across the
+two measured runs they traded places on both solve rate (17 vs 16, then 16 vs
+17) and tokens per solve, within the one-to-two task noise band. The reason to
+stop is that neither variant beats full-history on a summary-only benchmark, so
+a second variant of a mechanism that does not work buys nothing. Keep the code
+path for reproducing published numbers; do not extend it.
+
+---
+
 ## Phase 3 — Additional Memory Types
 
 Add:
@@ -627,6 +714,137 @@ EPHEMERAL
 ```
 
 Create a unified memory interface.
+
+---
+
+### The mechanism, corrected — 2026-09-01
+
+PatchSearch's loss was never that summarising a failure destroys information.
+It was that PatchSearch **discarded the prior implementation**, forcing the
+model to rewrite a whole function from a one-sentence hint while full history
+handed it code to edit. That is a defect in the strategy, not a cost inherent
+to compression.
+
+Three fixes, all in the evidence path:
+
+* Split the assertion into `actual_value` and `expected_value`. unittest
+  renders `assertEqual` as `<actual> != <expected>`, which was being carried as
+  prose. Memory now states the gap a retry has to close.
+* Report every failing test, not only the first. A retry that satisfied one
+  assertion routinely broke the next.
+* Carry the most recent completion alongside the bounded memory
+  (`patchsearch-with-code`). One completion, not the four full history keeps.
+
+**Result: parity with full history at 21.5% fewer tokens, on the hard
+benchmark.** Run `20260901T024612Z-bf19df`, 32 preflight-viable tasks.
+
+| strategy | solve@5 | solved | tokens | tokens/solve | vs full-history |
+|---|---|---|---|---|---|
+| no-memory | 0.312 | 10/32 | 252,095 | 25,210 | +64.7% |
+| full-history | 0.688 | 22/32 | 336,779 | 15,308 | — |
+| patchsearch | 0.562 | 18/32 | 276,905 | 15,384 | +0.5% |
+| **patchsearch-with-code** | **0.656** | **21/32** | **264,267** | **12,584** | **-17.8%** |
+
+21 against 22 is statistically indistinguishable (discordant 3/2, p = 1.0) at
+21.5% fewer raw tokens and 17.8% less per solved problem. This satisfies
+section 20's first two criteria on a benchmark that is not saturated.
+
+The two controls are what make the mechanism legible rather than the number
+lucky. `no-memory` at 10/32 shows memory is doing most of the work
+(p = 0.001 against with-code). Plain `patchsearch` at 15,384 tokens per solve
+shows the summary alone buys **no token advantage at all** once normalised by
+correctness -- it simply solves less. Restoring one completion recovers three
+of the four lost tasks *and* drops cost 18%.
+
+Bounded failure memory plus the current implementation beats verbose history.
+That is the thesis, and it now has evidence on the harder benchmark.
+
+**Standing caveat.** One run, and noise here is about three tasks, so a
+one-task gap is inside it. The claim is parity, not superiority. The 21.5%
+token reduction is the robust half. Replication is required before this is
+stated without qualification.
+
+### Replication — 2026-09-25
+
+Run `20260925T150550Z-f59c90`, identical configuration, the two strategies
+only.
+
+| run | full-history | with-code | discordant (fh / wc) | p | raw tokens | tokens/solve |
+|---|---|---|---|---|---|---|
+| original | 22/32 | 21/32 | 3 / 2 | 1.0 | -21.5% | -17.8% |
+| replication | 21/32 | 19/32 | 3 / 1 | 0.625 | -16.7% | -7.9% |
+| **pooled** | **43/64** | **40/64** | **6 / 3** | **0.508** | **-19.0%** | **-13.0%** |
+
+**The token reduction replicates; the size of the per-solve saving does not.**
+Raw tokens fell 16.7% against 21.5%, and pooled the saving is 19.0%. Per solved
+problem it roughly halved, to 7.9%, because with-code solved two fewer this time
+while full-history solved one fewer. Pooled, with-code is 13.0% cheaper per solve.
+
+**Correctness is not distinguishable, but the direction is consistent.** Neither
+run nor the pool is significant (pooled p = 0.508). But with-code trailed in both
+runs, and full-history holds 6 of the 9 discordant tasks. The accurate claim is
+narrower than "parity": *about 19% fewer tokens, at a correctness cost that is
+not measurable at n = 32 and, if real, is about three tasks in 64.* Separating
+the two would take roughly four times as many paired tasks, which means an
+evaluator image that runs more than 32 of the 148 Hard tasks.
+
+Both strategies moved between runs (full-history lost 2 and gained 1;
+with-code lost 2 and gained 0), consistent with the three-task noise band
+already recorded.
+
+---
+
+### Phase 4 precondition, resolved 2026-09-01
+
+An allocator allocates a scarce resource. Under task-local memory nothing was
+scarce: the retrieval budget bound on **0 of 155** attempts, the pool never
+exceeded five memories, and full history peaked at 6,828 tokens against a
+~200k window. A utility score would have ranked items that were all included
+anyway. Compression cannot pay where nothing fails to fit.
+
+Cross-task memory (`store.py`) and the heuristic allocator (`allocator.py`) are
+now implemented, and the precondition is met: the candidate pool reaches 15,218
+characters against a 3,000-character budget and **binds on 148 of 148 tasks**,
+with roughly 24 of 74 memories selected per attempt.
+
+Two constraints shaped the store. It is **frozen**, seeded from a completed
+run, because online accumulation would make a task's context depend on which
+other tasks a thread pool finished first. And **executable constraints never
+cross task boundaries**: every BigCodeBench task defines `task_func`, so a
+transferred constraint would assert against an unrelated function of the same
+name and be silently false. Only summaries transfer.
+
+**Result: allocation works; there is nothing worth allocating.**
+Run `20260901T003400Z-52a4f2`, same 32 tasks.
+
+| strategy | solve@5 | solved | tokens | tokens/solve |
+|---|---|---|---|---|
+| full-history | 0.656 | 21/32 | 341,439 | 16,259 |
+| patchsearch | 0.594 | 19/32 | 285,390 | **15,021** |
+| patchsearch-crosstask | 0.531 | 17/32 | **379,641** | 22,332 |
+
+Cross-task retrieval is the only strategy that made the prompt *larger* than
+full history while solving fewer tasks: compression became expansion. It cost
+48.7% more per solved problem than plain PatchSearch. The difference in solve
+rate is inside the noise band established above (p = 0.625 against PatchSearch),
+so the correctness claim is weak; the token cost is not.
+
+The cause was measurable before the run and is a property of the benchmark, not
+the code. Across 186 memories from 27 tasks, every root cause was task-local --
+a missing `wget` on one task, `KeyError: 'zz'` on another, a different absent
+path each time. Exactly one pair of tasks shared a failure mode. BigCodeBench-
+Hard is a set of deliberately independent library-composition problems, so
+there is no recurring mistake for accumulated experience to catch, and the
+allocator spends 2,706 characters per retry on other tasks' irrelevant history.
+
+**What this establishes.** The allocation machinery is verified and the policy
+is observable: selection is deterministic, budget-respecting, and now actually
+binding. What it lacks is a task distribution with recurring failure modes.
+Optimal allocation of memory that does not transfer is still worthless, and
+costs more than not allocating at all. Evaluating the allocator on its merits
+requires a benchmark where the same mistake recurs across tasks -- a repository
+of related tasks, a multi-file agent trajectory, or a benchmark family sharing
+an API surface -- not a wider search over scoring functions.
 
 ---
 
@@ -678,6 +896,172 @@ runtime = Runtime(
 
 result = runtime.run(task)
 ```
+
+---
+
+### Phase 5 outcome — built, 2026-09-25
+
+The runtime exists with the interface above. `Runtime(context_budget=4000)`
+solves one task with `patchsearch-with-code`, the strategy that reached parity,
+and `tokenos solve` exposes it on the command line. Each attempt runs task-local
+retrieval, optional cross-task allocation from a frozen store, then a new
+**context compiler** (`compiler.py`), which is the piece that was missing:
+retrieval bounded memory in characters, but nothing bounded the prompt.
+
+**The compiler reproduces the measured strategy exactly.** It renders through
+the same `build_prompt` the benchmark used. Replayed over run
+`20260901T024612Z-bf19df`, all 194 recorded PatchSearch prompts are recompiled
+byte-for-byte when the budget does not bind, so the runtime is the benchmarked
+strategy rather than a lookalike of it.
+
+**Token estimation is calibrated, not guessed.** Across 707 recorded requests
+the densest text reached 3.34 UTF-8 bytes per API-reported input token; the
+compiler divides by 3.0, which overestimates all 194 replayed attempts. No
+tokenizer dependency was added.
+
+**Priority under pressure follows the ablations.** Memory lifted 10/32 to 18/32
+and the latest code lifted 18/32 to 21/32, so when a budget binds the compiler
+drops transferred memory first, then the code, then summaries oldest first, and
+keeps executable constraints longest. The code is kept or dropped whole. A task
+that does not fit on its own raises `ContextBudgetError` rather than being
+truncated.
+
+**Where the budget binds** (`tokenos sweep`, same run, estimated tokens):
+
+| budget | with-code attempts trimmed | code dropped | memories dropped | tokens vs unbounded |
+|---|---|---|---|---|
+| unbounded / 4000 | 0 / 90 | 0 | 0 | — |
+| 1500 | 18 / 90 | 18 | 1 | -17.8% |
+| 1000 | 48 / 90 | 47 | 18 | -34.0% |
+
+At the default 4,000 tokens nothing is cut, because bounded memory already
+peaks at 1,775 billed tokens. That is the Phase 2 result restated as a guarantee:
+the context stays small without a limit having to enforce it. Tighter budgets
+mostly remove the code first, which is the component worth three tasks, so their
+correctness cost has to be **measured live, not inferred**. The sweep prices
+each budget in advance so that live run can be chosen deliberately.
+
+**A defect fixed along the way.** Parsing and evaluation are now one shared
+function. Before, a `ValueError` raised *inside the evaluator* — including
+`AdapterError` for an unregistered benchmark — was caught as the model's
+malformed output and scored as a failed attempt. It now stops the trajectory
+as an evaluator error.
+
+**Next.** (Replication done, recorded above.) Run with-code at 1,000
+tokens against unbounded to measure what dropping the code costs.
+
+**Budgeted benchmark runs — built, 2026-10-06.** `tokenos benchmark
+--context-budget N` routes every bounded-memory prompt through the compiler,
+so a live run measures the Runtime's actual behaviour under a budget. Full
+history is left uncompiled as the control. Each `request_started` event records
+the compiled context (tokens, code kept or dropped, memories dropped); a task
+that cannot fit stops its trajectory as `context_budget_exceeded` without a
+model call. Unbounded runs are unchanged: replaying the replication run
+`20260925T150550Z-f59c90`, all 99 with-code prompts are reproduced byte-for-byte,
+and at 1,000 tokens 52 of 99 would be trimmed (code dropped on 51), with no task
+too large to fit. The live run is
+
+```bash
+tokenos benchmark --dataset bigcodebench-hard --all --skip-unviable-tasks \
+  --strategies full-history,patchsearch-with-code --context-budget 1000 \
+  --budget-usd 4 --concurrency 4
+```
+
+which pairs with-code@1000 against full history in the same run and against
+the two unbounded with-code runs (21/32, 19/32).
+
+### Binding budget — measured, 2026-10-07
+
+Run `20261007T033256Z-4affde`, the command above ($2.16).
+
+| strategy | solved | tokens | tokens/solve |
+|---|---|---|---|
+| full-history | 24/32 | 356,281 | 14,845 |
+| with-code @ 1,000 | 16/32 | 285,718 | 17,857 |
+| with-code, unbounded (two earlier runs) | 21/32, 19/32 | 264,267 / 296,118 | 12,584 / 15,585 |
+
+**A 1,000-token budget costs correctness, and saves nothing.** Against full
+history in the same run, with-code@1000 lost 8 tasks and won none (McNemar
+exact p = 0.008), the first significant correctness difference in the
+project. Against the unbounded with-code runs it lost 5 and 3 tasks and never
+solved one they missed. It used 19.8% fewer tokens than full history, but 20%
+*more per solve*, and no fewer tokens than unbounded with-code: failed tasks
+run all five attempts, so the attempts the budget trims are paid for again in
+extra retries.
+
+**What the budget cut was the code.** Code was dropped on 55 of 73 retries and
+memories on 6. Retry prompts stayed at 534–577 input tokens against 876–980
+unbounded, i.e. close to plain PatchSearch, and 16/32 is in line with plain
+PatchSearch's 18/32. The ablation predicted this: the latest code is worth
+about three tasks, and it is the first thing a tight budget removes.
+
+**Consequences.** Full history scored 24/32 here against 22 and 21 before, so
+part of the 8-task gap is run noise, but the zero discordant tasks in the
+budget's favour across three comparisons is not. The default budget of 4,000
+stays: it never binds on this benchmark. A budget below the code's size should
+be treated as a different, weaker strategy rather than a cheaper version of the
+same one. Whether the compiler should give up older summaries before the code
+is open; plain PatchSearch (memory, no code) and with-code differ mainly in the
+code, so the evidence leans that way.
+
+### Ten attempts, uncapped output — 2026-10-07
+
+Run `20261007T045053Z-f3837c`: `--max-attempts 10 --max-output-tokens 16384`,
+three strategies ($6.45).
+
+**The output cap was the invalid-output problem.** Every `invalid_output` in
+the earlier runs (41, 38, 33 per run) had hit the 4,096-token output cap: the
+reasoning model spent it before closing the JSON. At 16,384 there was 1 invalid
+response in 405 calls.
+
+| strategy | solved | input tokens | total tokens | tokens/solve |
+|---|---|---|---|---|
+| full-history | 26/32 | 365,602 | 829,645 | 31,909 |
+| with-code | 24/32 | 122,035 (-67%) | 535,253 (-35%) | 22,302 (-30%) |
+| best-code | 24/32 | 125,552 | 579,369 | 24,140 |
+
+Mean input tokens at attempt 10: full history 7,688, with-code 1,132. With
+more attempts the saving grows, as the thesis predicts. Correctness still
+trails by two (2 full-history-only tasks, 0 the other way). Best-code, which
+shows the attempt with the fewest failing tests instead of the latest, did not
+help (4 / 2 against full history).
+
+**Why bounded memory loses the tasks it loses: it gets stuck.** On
+BigCodeBench/326 with-code failed the same three tests ten times running; on
+785 it raised the same `FileNotFoundError` seven times. Retrieval deduplicates
+identical failures, so the model sees one calm summary and makes another small
+edit. Full history shows the repetition. `patchsearch-adaptive` restores it:
+repeat counts on memories, an explicit STUCK directive after two identical
+failures, and the latest valid attempt's raw test output (bounded to 1,500
+characters).
+
+### Stuck detection — measured and replicated, 2026-10-07
+
+Runs `20261007T055643Z-cd5774` (with with-code as a control) and
+`20261007T065630Z-1cba26` (replication), ten attempts, 16,384-token output
+cap.
+
+| run | full-history | adaptive | discordant (fh / ad) | tokens vs fh |
+|---|---|---|---|---|
+| first | 27/32 | 28/32 | 2 / 3 | -41.5% |
+| replication | 24/32 | 25/32 | 2 / 3 | -32.6% |
+| **pooled** | **51/64** | **53/64** | **4 / 6 (p = 0.75)** | **-36.7%** |
+
+Per solve, adaptive cost 18,786 tokens against 30,821 (-39%); input tokens
+fell 63%. In the first run, with-code repeated its usual result (24/32), and
+adaptive beat it on 5 tasks while losing 1, including both stuck tasks (326,
+785), solved by attempts 3 and 4. The STUCK directive fired on 17 of 113 calls
+and was followed directly by a pass twice; the raw test output appears to have
+done more on 326 and 785.
+
+**This is the first configuration that does not trail full history.** The
+claim is parity at substantially lower cost, not superiority: the solve
+difference is well inside the noise. Caveat: the mechanism was designed after
+looking at failures in run `20261007T045053Z-f3837c` on the same 32 tasks, so
+held-out tasks are the next test. Adaptive is now the Runtime's default
+strategy, with the default context budget raised to 8,000 (adaptive prompts
+reach about 4,300 estimated tokens, so 4,000 would have dropped code) and the
+default output cap to 16,384.
 
 ---
 

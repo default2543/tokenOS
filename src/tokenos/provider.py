@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import functools
 import json
 import os
 import random
@@ -9,6 +10,14 @@ from typing import Any, Callable
 
 from tokenos.models import ModelUsage, RunConfig
 from tokenos.strategies import SYSTEM_INSTRUCTIONS
+
+
+COMPLETION_SCHEMA = {
+    "type": "object",
+    "properties": {"completion": {"type": "string"}},
+    "required": ["completion"],
+    "additionalProperties": False,
+}
 
 
 class ModelProviderError(RuntimeError):
@@ -25,12 +34,55 @@ class ModelResponse:
     resolved_model: str | None = None
 
 
+@functools.cache
+def _retryable_transport_errors() -> tuple[type[BaseException], ...]:
+    """Transport failures worth another attempt.
+
+    The SDK's connection and timeout errors derive from its own base class, not
+    the builtins, and carry no status code -- so without this they were treated
+    as fatal and ended a whole trajectory.
+    """
+    types: list[type[BaseException]] = [ConnectionError, TimeoutError]
+    try:
+        from openai import APIConnectionError, APITimeoutError
+
+        types.extend([APIConnectionError, APITimeoutError])
+    except ImportError:
+        pass
+    return tuple(types)
+
+
 def _value(obj: Any, name: str, default: Any = None) -> Any:
     if obj is None:
         return default
     if isinstance(obj, dict):
         return obj.get(name, default)
     return getattr(obj, name, default)
+
+
+def _chat_usage(response: Any) -> ModelUsage:
+    usage = _value(response, "usage", {})
+    input_details = _value(usage, "prompt_tokens_details", {})
+    output_details = _value(usage, "completion_tokens_details", {})
+    return ModelUsage(
+        input_tokens=int(_value(usage, "prompt_tokens", 0) or 0),
+        cached_input_tokens=int(_value(input_details, "cached_tokens", 0) or 0),
+        output_tokens=int(_value(usage, "completion_tokens", 0) or 0),
+        reasoning_tokens=int(_value(output_details, "reasoning_tokens", 0) or 0),
+    )
+
+
+def base_url(endpoint: str) -> str:
+    """The OpenAI-compatible base URL for an endpoint.
+
+    A bare Azure resource endpoint gets Azure's v1 path; an endpoint that
+    already names its API version (OpenRouter, vLLM, a Foundry v1 URL) is used
+    as given.
+    """
+    endpoint = endpoint.rstrip("/")
+    if endpoint.endswith("/v1"):
+        return endpoint + "/"
+    return f"{endpoint}/openai/v1/"
 
 
 def _usage(response: Any) -> ModelUsage:
@@ -66,7 +118,6 @@ class AzureOpenAIProvider:
                 "openai is not installed; install the TokenOS package first"
             ) from exc
 
-        base_url = f"{config.azure_endpoint}/openai/v1/"
         if config.azure_auth == "api_key":
             api_key: str | Callable[[], str] = os.environ.get(
                 "AZURE_OPENAI_API_KEY", ""
@@ -84,16 +135,22 @@ class AzureOpenAIProvider:
             api_key = get_bearer_token_provider(
                 DefaultAzureCredential(), "https://ai.azure.com/.default"
             )
-        return OpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+        return OpenAI(
+            api_key=api_key, base_url=base_url(config.azure_endpoint), max_retries=0
+        )
 
-    def generate(self, prompt: str) -> ModelResponse:
+    def generate(
+        self, prompt: str, *, instructions: str | None = None
+    ) -> ModelResponse:
         started = time.monotonic()
         last_error: BaseException | None = None
         for retry in range(4):
             try:
+                if self.config.provider_api == "chat":
+                    return self._chat(prompt, instructions, started)
                 response = self.client.responses.create(
                     model=self.config.azure_deployment,
-                    instructions=SYSTEM_INSTRUCTIONS,
+                    instructions=instructions or SYSTEM_INSTRUCTIONS,
                     input=prompt,
                     reasoning={"effort": self.config.reasoning_effort},
                     max_output_tokens=self.config.max_output_tokens,
@@ -103,12 +160,7 @@ class AzureOpenAIProvider:
                             "type": "json_schema",
                             "name": "coding_completion",
                             "strict": True,
-                            "schema": {
-                                "type": "object",
-                                "properties": {"completion": {"type": "string"}},
-                                "required": ["completion"],
-                                "additionalProperties": False,
-                            },
+                            "schema": COMPLETION_SCHEMA,
                         }
                     },
                 )
@@ -127,7 +179,7 @@ class AzureOpenAIProvider:
                     isinstance(status, int) and 500 <= status < 600
                 )
                 retryable = retryable or isinstance(
-                    exc, (ConnectionError, TimeoutError)
+                    exc, _retryable_transport_errors()
                 )
                 if not retryable or retry == 3:
                     break
@@ -136,8 +188,40 @@ class AzureOpenAIProvider:
                 self._sleep(delay + random.uniform(0, min(0.25, delay / 10)))
         assert last_error is not None
         raise ModelProviderError(
-            f"Azure request failed after retries: {type(last_error).__name__}: {last_error}"
+            f"Model request failed after retries: {type(last_error).__name__}: {last_error}"
         ) from last_error
+
+
+    def _chat(
+        self, prompt: str, instructions: str | None, started: float
+    ) -> ModelResponse:
+        # No reasoning parameter: open models either ignore it or reject it.
+        response = self.client.chat.completions.create(
+            model=self.config.azure_deployment,
+            messages=[
+                {"role": "system", "content": instructions or SYSTEM_INSTRUCTIONS},
+                {"role": "user", "content": prompt},
+            ],
+            max_tokens=self.config.max_output_tokens,
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "coding_completion",
+                    "strict": True,
+                    "schema": COMPLETION_SCHEMA,
+                },
+            },
+        )
+        choices = _value(response, "choices", []) or []
+        message = _value(choices[0], "message") if choices else None
+        return ModelResponse(
+            output_text=str(_value(message, "content", "") or ""),
+            response_id=_value(response, "id"),
+            request_id=_value(response, "_request_id"),
+            usage=_chat_usage(response),
+            latency_seconds=time.monotonic() - started,
+            resolved_model=_value(response, "model"),
+        )
 
 
 def _retry_after_seconds(exc: BaseException) -> float | None:
@@ -152,9 +236,9 @@ def _retry_after_seconds(exc: BaseException) -> float | None:
         return None
 
 
-def structured_output_overhead_bytes() -> int:
+def structured_output_overhead_bytes(instructions: str | None = None) -> int:
     schema = {
-        "instructions": SYSTEM_INSTRUCTIONS,
+        "instructions": instructions or SYSTEM_INSTRUCTIONS,
         "format": {
             "type": "json_schema",
             "name": "coding_completion",

@@ -10,28 +10,63 @@ import sys
 from typing import Sequence
 
 from tokenos.artifacts import ArtifactError, EventStore
+from tokenos.compiler import ContextBudgetError
 from tokenos.config import (
     ConfigurationError,
     config_from_environment,
     config_from_manifest,
 )
 from tokenos.dataset import (
+    BIGCODEBENCH_HARD_VERSION,
     DEFAULT_DATASET_PATH,
+    DEFAULT_BIGCODEBENCH_HARD_PATH,
     DatasetError,
+    fetch_bigcodebench_hard,
     fetch_humaneval_plus,
     file_sha256,
+    load_canonical_solutions,
     load_problems,
+    is_stdlib_problem,
     select_problems,
     sorted_task_ids,
 )
 from tokenos.evaluator import DockerEvaluator, docker_status
 from tokenos.models import StrategyName
+from tokenos.preflight import (
+    PreflightError,
+    preflight_path,
+    run_preflight,
+    viable_task_ids,
+    write_report,
+)
 from tokenos.provider import AzureOpenAIProvider
+from tokenos.replay import budget_sweep, context_growth
 from tokenos.runner import BenchmarkRunner
-from tokenos.strategies import parse_completion
+from tokenos.runtime import DEFAULT_CONTEXT_BUDGET, DEFAULT_STRATEGY, Runtime
+from tokenos.store import MemoryStore
+from tokenos.strategies import PATCHSEARCH_STRATEGIES, parse_completion
 
 DEFAULT_RUNS_ROOT = Path("runs")
-VALID_STRATEGIES = {"no-memory", "full-history", "patchsearch"}
+DATASETS = ("humaneval-plus", "bigcodebench-hard")
+DATASET_DEFAULTS = {
+    "humaneval-plus": (DEFAULT_DATASET_PATH, "v0.1.10", "tokenos-evalplus:0.3.1"),
+    "bigcodebench-hard": (
+        DEFAULT_BIGCODEBENCH_HARD_PATH,
+        BIGCODEBENCH_HARD_VERSION,
+        "tokenos-bigcodebench-stdlib:0.3.0",
+    ),
+}
+VALID_STRATEGIES = {
+    "no-memory",
+    "full-history",
+    "sliding-window",
+    "patchsearch",
+    "patchsearch-explained",
+    "patchsearch-crosstask",
+    "patchsearch-with-code",
+    "patchsearch-best-code",
+    "patchsearch-adaptive",
+}
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -40,27 +75,68 @@ def build_parser() -> argparse.ArgumentParser:
 
     dataset = subparsers.add_parser("dataset", help="manage benchmark datasets")
     dataset_subparsers = dataset.add_subparsers(dest="dataset_command", required=True)
-    fetch = dataset_subparsers.add_parser("fetch", help="download HumanEval+ v0.1.10")
-    fetch.add_argument("--path", type=Path, default=DEFAULT_DATASET_PATH)
+    fetch = dataset_subparsers.add_parser("fetch", help="download a pinned dataset")
+    fetch.add_argument("--name", choices=DATASETS, default="humaneval-plus")
+    fetch.add_argument("--path", type=Path)
 
     doctor = subparsers.add_parser("doctor", help="validate local and Azure setup")
     doctor.add_argument("--live", action="store_true", help="make a small Azure request")
-    doctor.add_argument("--dataset-path", type=Path, default=DEFAULT_DATASET_PATH)
-    doctor.add_argument("--evaluator-image", default="tokenos-evalplus:0.3.1")
+    doctor.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
+    doctor.add_argument("--dataset-path", type=Path)
+    doctor.add_argument("--evaluator-image")
+
+    preflight = subparsers.add_parser(
+        "preflight",
+        help="check which tasks the evaluator image can actually run (no tokens)",
+    )
+    preflight.add_argument("--dataset", choices=DATASETS, default="bigcodebench-hard")
+    preflight_selection = preflight.add_mutually_exclusive_group()
+    preflight_selection.add_argument(
+        "--all", action="store_true", help="check every dataset task"
+    )
+    preflight_selection.add_argument("--task-ids", help="comma-separated benchmark task IDs")
+    preflight.add_argument("--dataset-path", type=Path)
+    preflight.add_argument("--evaluator-image")
+    preflight.add_argument("--concurrency", type=int, default=4)
+    preflight.add_argument("--report-path", type=Path)
 
     benchmark = subparsers.add_parser("benchmark", help="start a benchmark run")
+    benchmark.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
     benchmark.add_argument(
         "--strategies", default="full-history,patchsearch", help="comma-separated"
     )
     selection = benchmark.add_mutually_exclusive_group(required=True)
-    selection.add_argument("--all", action="store_true", help="run all 164 tasks")
-    selection.add_argument("--task-ids", help="comma-separated HumanEval task IDs")
-    benchmark.add_argument("--dataset-path", type=Path, default=DEFAULT_DATASET_PATH)
+    selection.add_argument("--all", action="store_true", help="run every dataset task")
+    selection.add_argument("--task-ids", help="comma-separated benchmark task IDs")
+    benchmark.add_argument("--dataset-path", type=Path)
     benchmark.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     benchmark.add_argument("--max-attempts", type=int, default=5)
     benchmark.add_argument("--concurrency", type=int, default=4)
     benchmark.add_argument("--budget-usd", type=float, default=10.0)
-    benchmark.add_argument("--evaluator-image", default="tokenos-evalplus:0.3.1")
+    benchmark.add_argument("--evaluator-image")
+    benchmark.add_argument(
+        "--max-output-tokens",
+        type=int,
+        default=16384,
+        help="per-request output cap, reasoning included; responses that hit it "
+        "are truncated JSON and score as invalid_output",
+    )
+    benchmark.add_argument(
+        "--context-budget",
+        type=int,
+        help="token budget the context compiler enforces on bounded-memory "
+        "strategies (default: unbounded)",
+    )
+    benchmark.add_argument(
+        "--skip-unviable-tasks",
+        action="store_true",
+        help="drop tasks whose reference solution fails preflight in this image",
+    )
+    benchmark.add_argument("--preflight-path", type=Path)
+    benchmark.add_argument(
+        "--memory-store",
+        help="run id whose memories seed cross-task retrieval",
+    )
 
     resume = subparsers.add_parser("resume", help="resume an interrupted run")
     resume.add_argument("run_id")
@@ -75,6 +151,45 @@ def build_parser() -> argparse.ArgumentParser:
     report.add_argument("run_id")
     report.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     report.add_argument("--json", action="store_true")
+
+    solve = subparsers.add_parser(
+        "solve", help="solve one task with the TokenOS runtime under a context budget"
+    )
+    solve.add_argument("task_id")
+    solve.add_argument("--dataset", choices=DATASETS, default="humaneval-plus")
+    solve.add_argument("--dataset-path", type=Path)
+    solve.add_argument("--context-budget", type=int, default=DEFAULT_CONTEXT_BUDGET)
+    solve.add_argument(
+        "--strategy",
+        choices=sorted(PATCHSEARCH_STRATEGIES),
+        default=DEFAULT_STRATEGY,
+    )
+    solve.add_argument("--max-attempts", type=int, default=5)
+    solve.add_argument("--budget-usd", type=float, default=1.0)
+    solve.add_argument("--evaluator-image")
+    solve.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    solve.add_argument(
+        "--memory-store", help="run id whose memories seed cross-task retrieval"
+    )
+    solve.add_argument("--json", action="store_true")
+
+    growth = subparsers.add_parser(
+        "growth", help="show measured prompt size by attempt for a run (no tokens)"
+    )
+    growth.add_argument("run_id")
+    growth.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    growth.add_argument("--json", action="store_true")
+
+    sweep = subparsers.add_parser(
+        "sweep",
+        help="recompile a run's bounded-memory prompts under context budgets (no tokens)",
+    )
+    sweep.add_argument("run_id")
+    sweep.add_argument(
+        "--budgets", default="4000,1500,1000", help="comma-separated token budgets"
+    )
+    sweep.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    sweep.add_argument("--json", action="store_true")
     return parser
 
 
@@ -98,13 +213,23 @@ def _task_ids(raw: str) -> tuple[str, ...]:
 
 
 def command_dataset_fetch(args: argparse.Namespace) -> int:
-    path, digest = fetch_humaneval_plus(args.path)
-    print(f"Downloaded HumanEval+ v0.1.10 to {path}")
+    default_path, version, _ = DATASET_DEFAULTS[args.name]
+    target = args.path or default_path
+    if args.name == "humaneval-plus":
+        path, digest = fetch_humaneval_plus(target)
+        label = "HumanEval+"
+    else:
+        path, digest = fetch_bigcodebench_hard(target)
+        label = "BigCodeBench-Hard"
+    print(f"Downloaded {label} {version} to {path}")
     print(f"SHA-256: {digest}")
     return 0
 
 
 def command_doctor(args: argparse.Namespace) -> int:
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
     checks: list[tuple[str, bool, str]] = []
     version_ok = sys.version_info[:2] == (3, 12)
     checks.append(
@@ -115,16 +240,20 @@ def command_doctor(args: argparse.Namespace) -> int:
         )
     )
     try:
-        problems = load_problems(args.dataset_path)
-        dataset_ok = len(problems) == 164
+        problems = load_problems(dataset_path, dataset_name=args.dataset)
+        expected_tasks = 164 if args.dataset == "humaneval-plus" else 148
+        dataset_ok = len(problems) == expected_tasks
         dataset_note = f"{len(problems)} tasks"
     except DatasetError as exc:
         problems = {}
         dataset_ok = False
         dataset_note = str(exc)
-    checks.append(("HumanEval+ v0.1.10", dataset_ok, dataset_note))
+    dataset_label = (
+        "HumanEval+" if args.dataset == "humaneval-plus" else "BigCodeBench-Hard"
+    )
+    checks.append((f"{dataset_label} {version}", dataset_ok, dataset_note))
 
-    docker = docker_status(args.evaluator_image)
+    docker = docker_status(evaluator_image)
     checks.extend(
         [
             ("Docker CLI", docker["cli"], "installed" if docker["cli"] else "missing"),
@@ -136,7 +265,7 @@ def command_doctor(args: argparse.Namespace) -> int:
             (
                 "Evaluator image",
                 docker["image"],
-                args.evaluator_image if docker["image"] else "not built",
+                evaluator_image if docker["image"] else "not built",
             ),
         ]
     )
@@ -182,14 +311,16 @@ def command_doctor(args: argparse.Namespace) -> int:
             assert problems
             config = config_from_environment(
                 strategies=("no-memory",),
-                task_ids=("HumanEval/0",),
-                dataset_path=args.dataset_path,
-                dataset_sha256=file_sha256(args.dataset_path),
+                task_ids=(next(iter(problems)),),
+                dataset_path=dataset_path,
+                dataset_sha256=file_sha256(dataset_path),
+                dataset_name=args.dataset,
+                dataset_version=version,
                 max_attempts=1,
                 concurrency=1,
                 budget_usd=10.0,
             )
-            config = replace(config, evaluator_image=args.evaluator_image)
+            config = replace(config, evaluator_image=evaluator_image)
             response = AzureOpenAIProvider(config).generate(
                 "TASK doctor\n\ndef tokenos_doctor():\n    \"\"\"Return True.\"\"\"\n"
             )
@@ -201,20 +332,149 @@ def command_doctor(args: argparse.Namespace) -> int:
     return 1 if hard_failures else 0
 
 
-def command_benchmark(args: argparse.Namespace) -> int:
-    problems = load_problems(args.dataset_path)
-    task_ids = sorted_task_ids(problems) if args.all else _task_ids(args.task_ids)
+def command_preflight(args: argparse.Namespace) -> int:
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
+    task_ids = sorted_task_ids(problems) if not args.task_ids else _task_ids(args.task_ids)
     selected = select_problems(problems, task_ids)
+    solutions = load_canonical_solutions(dataset_path, dataset_name=args.dataset)
+    config = _preflight_config(dataset_path, args.dataset, version, evaluator_image)
+    report = run_preflight(
+        selected,
+        solutions,
+        DockerEvaluator(config),
+        dataset_name=args.dataset,
+        dataset_version=version,
+        dataset_sha256=config.dataset_sha256,
+        evaluator_image=evaluator_image,
+        concurrency=args.concurrency,
+    )
+    path = args.report_path or preflight_path(args.dataset, version)
+    write_report(report, path)
+    checked = report["checked_tasks"]
+    viable = report["viable_tasks"]
+    print(f"Preflight {args.dataset} {version} in {evaluator_image}")
+    print(f"  reference solution passes: {viable}/{checked}")
+    excluded = [item for item in report["results"] if not item["viable"]]
+    for item in excluded[:10]:
+        print(f"  [DROP] {item['task_id']}: {item['status']} {item['detail']}".rstrip())
+    if len(excluded) > 10:
+        print(f"  ... and {len(excluded) - 10} more")
+    print(f"Report: {path}")
+    return 0 if viable else 1
+
+
+def _preflight_config(
+    dataset_path: Path, dataset_name: str, version: str, evaluator_image: str
+):
+    """Build a evaluator-only config; preflight makes no model calls."""
+    from tokenos.config import utc_now
+    from tokenos.models import RunConfig
+
+    return RunConfig(
+        run_id="preflight",
+        strategies=("no-memory",),
+        task_ids=(),
+        dataset_path=str(dataset_path),
+        dataset_name=dataset_name,
+        dataset_version=version,
+        dataset_sha256=file_sha256(dataset_path),
+        evaluator_image=evaluator_image,
+        created_at=utc_now(),
+    )
+
+
+def command_benchmark(args: argparse.Namespace) -> int:
+    if args.max_output_tokens <= 0:
+        raise ConfigurationError("--max-output-tokens must be positive")
+    if args.context_budget is not None:
+        if args.context_budget <= 0:
+            raise ConfigurationError("--context-budget must be positive")
+        if not (PATCHSEARCH_STRATEGIES | {"sliding-window"}).intersection(
+            _strategies(args.strategies)
+        ):
+            raise ConfigurationError(
+                "--context-budget only affects bounded-memory strategies and "
+                "sliding-window; add one to --strategies or drop the flag"
+            )
+    elif "sliding-window" in _strategies(args.strategies):
+        raise ConfigurationError(
+            "sliding-window needs --context-budget; without one it is full-history"
+        )
+    default_path, version, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    evaluator_image = args.evaluator_image or default_image
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
+    task_ids = sorted_task_ids(problems) if args.all else _task_ids(args.task_ids)
+    if args.skip_unviable_tasks:
+        path = args.preflight_path or preflight_path(args.dataset, version)
+        viable = viable_task_ids(
+            path,
+            dataset_sha256=file_sha256(dataset_path),
+            evaluator_image=evaluator_image,
+        )
+        dropped = [task_id for task_id in task_ids if task_id not in viable]
+        task_ids = tuple(task_id for task_id in task_ids if task_id in viable)
+        if not task_ids:
+            raise PreflightError(
+                f"no selected task passes preflight in {evaluator_image}"
+            )
+        if dropped:
+            preview = ", ".join(dropped[:5])
+            suffix = "..." if len(dropped) > 5 else ""
+            print(
+                f"Preflight excluded {len(dropped)} unviable task(s): {preview}{suffix}"
+            )
+    selected = select_problems(problems, task_ids)
+    if args.dataset == "bigcodebench-hard" and evaluator_image == default_image:
+        unsupported = [problem.task_id for problem in selected if not is_stdlib_problem(problem)]
+        if unsupported:
+            preview = ", ".join(unsupported[:5])
+            suffix = "..." if len(unsupported) > 5 else ""
+            raise DatasetError(
+                "the default BigCodeBench smoke evaluator supports stdlib-only tasks; "
+                f"unsupported selection: {preview}{suffix}; use an official full "
+                "evaluator image explicitly for the complete suite"
+            )
+    # Validate the strategy/store pairing before touching Azure configuration:
+    # it is a local mistake and deserves a local error.
+    strategies = _strategies(args.strategies)
+    memory_store = None
+    if args.memory_store:
+        if "patchsearch-crosstask" not in strategies:
+            raise ConfigurationError(
+                "--memory-store only affects patchsearch-crosstask; add it to "
+                "--strategies or drop the flag"
+            )
+        source = EventStore(args.runs_root, args.memory_store)
+        memory_store = MemoryStore.from_run(source.events_path, problems)
+        print(
+            f"Seeded cross-task memory from {args.memory_store}: "
+            f"{len(memory_store)} memories"
+        )
+    elif "patchsearch-crosstask" in strategies:
+        raise ConfigurationError(
+            "patchsearch-crosstask requires --memory-store RUN_ID"
+        )
     config = config_from_environment(
-        strategies=_strategies(args.strategies),
+        strategies=strategies,
         task_ids=task_ids,
-        dataset_path=args.dataset_path,
-        dataset_sha256=file_sha256(args.dataset_path),
+        dataset_path=dataset_path,
+        dataset_sha256=file_sha256(dataset_path),
+        dataset_name=args.dataset,
+        dataset_version=version,
         max_attempts=args.max_attempts,
         concurrency=args.concurrency,
         budget_usd=args.budget_usd,
     )
-    config = replace(config, evaluator_image=args.evaluator_image)
+    config = replace(
+        config,
+        evaluator_image=evaluator_image,
+        context_budget=args.context_budget,
+        max_output_tokens=args.max_output_tokens,
+    )
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)
     summary = BenchmarkRunner(
@@ -222,6 +482,7 @@ def command_benchmark(args: argparse.Namespace) -> int:
         AzureOpenAIProvider(config),
         DockerEvaluator(config),
         store,
+        memory_store=memory_store,
     ).run(selected)
     _print_summary(summary)
     print(f"Artifacts: {store.run_dir}")
@@ -245,7 +506,9 @@ def command_resume(args: argparse.Namespace) -> int:
                 budget_usd=args.budget_usd,
             )
             config = replace(config, budget_usd=args.budget_usd)
-    problems = load_problems(Path(config.dataset_path))
+    problems = load_problems(
+        Path(config.dataset_path), dataset_name=config.dataset_name
+    )
     if file_sha256(Path(config.dataset_path)) != config.dataset_sha256:
         raise DatasetError("dataset hash no longer matches the run manifest")
     selected = select_problems(problems, config.task_ids)
@@ -271,6 +534,124 @@ def command_report(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_solve(args: argparse.Namespace) -> int:
+    default_path, _, default_image = DATASET_DEFAULTS[args.dataset]
+    dataset_path = args.dataset_path or default_path
+    problems = load_problems(dataset_path, dataset_name=args.dataset)
+    (problem,) = select_problems(problems, (args.task_id,))
+    memory_store = None
+    if args.memory_store:
+        source = EventStore(args.runs_root, args.memory_store)
+        memory_store = MemoryStore.from_run(source.events_path, problems)
+    runtime = Runtime(
+        args.context_budget,
+        strategy=args.strategy,
+        max_attempts=args.max_attempts,
+        memory_store=memory_store,
+        budget_usd=args.budget_usd,
+        evaluator_image=args.evaluator_image or default_image,
+    )
+    result = runtime.run(problem)
+    if args.json:
+        print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+        return 0 if result.passed else 2
+    print(
+        f"{problem.task_id} with {args.strategy}, "
+        f"context budget {args.context_budget} tokens"
+    )
+    for item in result.attempts:
+        context = item.context
+        kept = f"{len(context.memories)} memories"
+        if context.included_code:
+            kept += " + code"
+        dropped = ""
+        if context.trimmed:
+            dropped = (
+                f", dropped {len(context.dropped_memories)} memories"
+                + (" and code" if context.dropped_code else "")
+            )
+        feedback = item.record.evaluation.feedback
+        status = "pass" if item.passed else feedback.kind if feedback else "fail"
+        print(
+            f"  attempt {item.record.attempt}: {status:<14} "
+            f"~{context.estimated_tokens} tokens compiled, "
+            f"{item.record.usage.input_tokens} billed ({kept}{dropped})"
+        )
+    verdict = "solved" if result.passed else f"unsolved ({result.stop_reason})"
+    print(
+        f"  {verdict}: {result.total_tokens} tokens, "
+        f"${result.estimated_cost_usd:.4f} estimated"
+    )
+    return 0 if result.passed else 2
+
+
+def _run_records(args: argparse.Namespace) -> tuple[EventStore, list]:
+    store = EventStore(args.runs_root, args.run_id)
+    records = store.completed_attempts()
+    if not records:
+        raise ArtifactError(f"run {args.run_id} has no completed attempts")
+    return store, records
+
+
+def command_growth(args: argparse.Namespace) -> int:
+    _, records = _run_records(args)
+    growth = context_growth(records)
+    if args.json:
+        print(json.dumps(growth, indent=2, sort_keys=True))
+        return 0
+    print(f"Mean input tokens by attempt, run {args.run_id}")
+    width = max(len(strategy) for strategy in growth)
+    attempts = sorted({row["attempt"] for rows in growth.values() for row in rows})
+    print(" " * (width + 2) + "".join(f"{f'#{n}':>8}" for n in attempts))
+    for strategy, rows in growth.items():
+        by_attempt = {row["attempt"]: row["mean_input_tokens"] for row in rows}
+        cells = "".join(f"{by_attempt.get(n, ''):>8}" for n in attempts)
+        print(f"  {strategy:<{width}}{cells}")
+    return 0
+
+
+def command_sweep(args: argparse.Namespace) -> int:
+    store, records = _run_records(args)
+    budgets: list[int | None] = [None]
+    for raw in args.budgets.split(","):
+        if raw.strip():
+            value = int(raw)
+            if value <= 0:
+                raise ConfigurationError("budgets must be positive")
+            budgets.append(value)
+    config = store.read_manifest()["config"]
+    problems = load_problems(
+        Path(config["dataset_path"]),
+        dataset_name=config.get("dataset_name", "humaneval-plus"),
+    )
+    sweep = budget_sweep(records, problems, budgets)
+    if args.json:
+        print(json.dumps(sweep, indent=2, sort_keys=True))
+        return 0
+    if not sweep:
+        print(f"Run {args.run_id} has no bounded-memory trajectories to recompile")
+        return 0
+    print(f"Context budget sweep, run {args.run_id} (estimated tokens)")
+    for strategy, rows in sweep.items():
+        print(f"  {strategy}")
+        for row in rows:
+            if row["budget_tokens"] is None:
+                print(
+                    f"    unbounded: {row['attempts']} attempts, "
+                    f"{row['estimated_tokens']} tokens; "
+                    f"{row['reproduced']} prompts reproduced byte-for-byte, "
+                    f"estimate covers billed tokens on {row['estimate_covers']}"
+                )
+                continue
+            print(
+                f"    {row['budget_tokens']:>6}: {row['estimated_tokens']} tokens, "
+                f"{row['trimmed']} trimmed (code dropped {row['dropped_code']}, "
+                f"memories dropped {row['dropped_memories']}), "
+                f"{row['unfit']} could not fit the task"
+            )
+    return 0
+
+
 def _print_summary(summary: dict) -> None:
     state = "complete" if summary.get("complete") else "partial"
     print(f"Run {summary['run_id']}: {state}")
@@ -293,13 +674,27 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_dataset_fetch(args)
         if args.command == "doctor":
             return command_doctor(args)
+        if args.command == "preflight":
+            return command_preflight(args)
         if args.command == "benchmark":
             return command_benchmark(args)
         if args.command == "resume":
             return command_resume(args)
         if args.command == "report":
             return command_report(args)
-    except (ConfigurationError, DatasetError, ArtifactError) as exc:
+        if args.command == "solve":
+            return command_solve(args)
+        if args.command == "growth":
+            return command_growth(args)
+        if args.command == "sweep":
+            return command_sweep(args)
+    except (
+        ConfigurationError,
+        ContextBudgetError,
+        DatasetError,
+        ArtifactError,
+        PreflightError,
+    ) as exc:
         parser.error(str(exc))
     return 1
 
