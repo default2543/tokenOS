@@ -213,7 +213,8 @@ def test_runtime_learns_from_a_failure_and_solves_on_retry() -> None:
     assert result.stop_reason is None
     assert result.solution.endswith("return x * 2\n")
     retry_prompt = provider.prompts[1]
-    assert "MOST RECENT ATTEMPT (attempt 1)" in retry_prompt
+    assert "MOST RECENT VALID ATTEMPT (attempt 1)" in retry_prompt
+    assert "Attempt 1 test feedback:" in retry_prompt
     assert "return x + 1" in retry_prompt
     assert "FAILURE MEMORY" in retry_prompt
     assert result.attempts[1].context.memories

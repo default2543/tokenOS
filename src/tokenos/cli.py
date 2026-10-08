@@ -117,7 +117,7 @@ def build_parser() -> argparse.ArgumentParser:
     benchmark.add_argument(
         "--max-output-tokens",
         type=int,
-        default=4096,
+        default=16384,
         help="per-request output cap, reasoning included; responses that hit it "
         "are truncated JSON and score as invalid_output",
     )

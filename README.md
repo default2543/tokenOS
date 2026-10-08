@@ -7,7 +7,7 @@ Learn from every failed attempt without replaying all of them.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-151%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-165%20passing-brightgreen)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-3-blue)
 
 [Results](#results) · [How it works](#how-it-works) · [Quickstart](#quickstart) ·
@@ -22,13 +22,14 @@ When a coding agent retries a failed task, the usual move is to hand the model
 grows with each attempt, and most of it is stale.
 
 TokenOS takes a different approach. It turns each failure into a small,
-validated **memory**, keeps only the **latest implementation**, and compiles
-them into a prompt that fits a **token budget** you choose.
+validated **memory**, keeps only the **latest working implementation**, tells
+the model when it is **repeating a mistake**, and compiles all of it into a
+prompt that fits a **token budget** you choose.
 
 ```python
 from tokenos import Runtime
 
-runtime = Runtime(context_budget=4000)
+runtime = Runtime(context_budget=8000)
 result = runtime.run(problem)
 
 result.passed        # True
@@ -38,79 +39,72 @@ result.total_tokens  # what the whole trajectory cost
 ## Results
 
 Measured on the **32 BigCodeBench-Hard tasks** whose reference solutions pass
-in the evaluator sandbox. Each task gets five attempts. Model: `gpt-5.4-mini`.
-Two runs with identical settings, pooled (64 paired trajectories per strategy):
+in the evaluator sandbox. Each task gets up to **ten attempts**. Model:
+`gpt-5.4-mini`. Two runs with identical settings, pooled (64 paired
+trajectories per strategy):
 
-| Strategy | What each retry sees | Solved | Tokens | Tokens per solve |
-|---|---|:-:|--:|--:|
-| Full history | every completion + every failure | **43/64** | 692,242 | 16,099 |
-| **PatchSearch + code** | bounded memory + the latest completion | 40/64 | **560,385** | **14,010** |
+| Strategy | What each retry sees | Solved | Tokens | Input tokens | Tokens per solve |
+|---|---|:-:|--:|--:|--:|
+| Full history | every completion + every failure | 51/64 | 1,571,888 | 723,955 | 30,821 |
+| **TokenOS** (`patchsearch-adaptive`) | bounded memory + latest valid code + stuck detection | **53/64** | **995,660** | **268,984** | **18,786** |
 
-> **19% fewer tokens, and 13% less per solved problem.** The token saving held
-> in both runs (21.5%, then 16.7%). The correctness gap of 3 tasks in 64 is not
-> statistically significant (McNemar exact test, 6 vs 3 discordant tasks,
-> p = 0.51). But PatchSearch + code trailed in both runs, so treat it as a small
-> possible cost, not as parity.
+> **37% fewer tokens, 63% less input, 39% less per solved problem, at equal
+> correctness.** TokenOS solved more tasks in both runs (28 vs 27, then 25 vs
+> 24). The difference in solves is not significant (McNemar exact test, 6 vs 4
+> discordant tasks, p = 0.75), so the accurate claim is *parity*, not
+> superiority. The token saving held in both runs (41%, then 33%).
 
-The first run also included two control strategies, and they show where the
-benefit comes from:
-
-| Strategy (first run only) | Solved | Tokens per solve |
-|---|:-:|--:|
-| No memory | 10/32 | 25,210 |
-| PatchSearch (memory, no code) | 18/32 | 15,384 |
-| PatchSearch + code | 21/32 | 12,584 |
-| Full history | 22/32 | 15,308 |
-
-- **Memory does most of the work.** No memory solves 10/32.
-- **A summary alone saves nothing once you count solved problems.** PatchSearch
-  without code costs about as much per solve as full history; it just solves
-  fewer tasks. Adding back *one* completion recovers most of the lost tasks and
-  cuts cost per solve by 18%.
+Runs `20261007T055643Z-cd5774` and `20261007T065630Z-1cba26`, $9.73 together.
 
 ### Context growth
 
-Mean input tokens per request, by attempt number (run `20260901T024612Z-bf19df`,
-reported by the API):
+Mean input tokens per request by attempt, averaged over the two runs
+(reported by the API):
 
 ```mermaid
 xychart-beta
     title "Prompt size by attempt"
-    x-axis "Attempt" [1, 2, 3, 4, 5]
-    y-axis "Mean input tokens" 0 --> 3500
-    line "Full history" [420, 1213, 1980, 2615, 3258]
-    line "PatchSearch + code" [424, 876, 980, 955, 912]
-    line "No memory" [426, 420, 415, 415, 415]
+    x-axis "Attempt" [1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+    y-axis "Mean input tokens" 0 --> 8000
+    line "Full history" [420, 1281, 2153, 3103, 3844, 4546, 5349, 6138, 6697, 7836]
+    line "TokenOS" [424, 1152, 1267, 1305, 1360, 1345, 1318, 1471, 1341, 1442]
 ```
 
-| Attempt | 1 | 2 | 3 | 4 | 5 |
-|---|--:|--:|--:|--:|--:|
-| Full history | 420 | 1,213 | 1,980 | 2,615 | 3,258 |
-| PatchSearch + code | 424 | 876 | 980 | 955 | 912 |
-| PatchSearch | 424 | 503 | 549 | 586 | 579 |
-| No memory | 426 | 420 | 415 | 415 | 415 |
+Full history grows with every attempt. TokenOS levels off after the first
+retry, so the saving grows the longer an agent keeps trying.
 
-Full history grows with every attempt. Bounded memory levels off after the
-first retry.
+### How it got here
+
+Each step was a measured fix for a measured failure:
+
+| Change | Evidence |
+|---|---|
+| Bounded failure memory | No memory solves 10/32; memory alone 18/32 |
+| Keep the latest code | 18/32 → 21/32, and 18% cheaper per solve than memory alone |
+| Raise the output cap 4K → 16K | Every invalid response (13–23% of attempts) had hit the cap; at 16K, 1 in 405 |
+| Detect repeated failures | Bounded memory was losing tasks by making the same mistake up to ten times running, because identical failures merge into one memory. Repeat counts, a STUCK directive and the latest raw test output turned a 2-task deficit (24 vs 26) into a 1-task lead |
+
+And two things that did **not** work, recorded rather than hidden:
+
+- **A tight context budget.** At 1,000 tokens the compiler drops the code, and
+  correctness fell to 16/32 against full history's 24/32 (p = 0.008). Keep the
+  budget above the size of the code; the default of 8,000 never binds here.
+- **Cross-task memory.** Across 186 memories from 27 tasks only one pair of
+  tasks shared a failure mode, so carrying other tasks' memories made prompts
+  larger without helping. It needs a benchmark where the same mistakes recur.
 
 ### Caveats
 
 - **Small sample.** Only 32 tasks run in the default sandbox, and identical
-  runs differ by about three tasks. A 3-in-64 gap would need roughly four times
-  as many paired tasks to confirm or rule out. The token saving is the reliable
-  result.
-- **Memory is weaker on BigCodeBench.** HumanEval+ reports the exact failing
-  input and expected output, so TokenOS stores failures there as executable
-  assertions. BigCodeBench reports only unittest messages, so failures become
-  bounded text summaries. HumanEval+ is saturated (about 0.97 solve@5), so it
-  serves as a regression check rather than evidence.
-- **Cross-task memory does not pay here.** It works mechanically: the allocator
-  is forced to choose on 148 of 148 tasks. But across 186 memories from 27
-  tasks, only one pair of tasks shared a failure mode. Carrying other tasks'
-  memories made prompts *larger* than full history (48.7% more per solve than
-  plain PatchSearch). It needs a benchmark where the same mistakes recur.
+  runs differ by about three tasks. Parity at n = 64 rules out a large
+  correctness cost, not a small one.
+- **One model.** Every result is `gpt-5.4-mini`. Open models run through
+  `TOKENOS_PROVIDER_API=chat` but have not been measured yet.
+- **The TokenOS strategy was tuned on these tasks.** Stuck detection was
+  designed after inspecting failures in run `20261007T045053Z-f3837c`, then
+  tested on two fresh runs. A held-out task set would be a stronger test.
 
-The full record, including the negative results, is in [plan.md](plan.md).
+The full record, including every negative result, is in [plan.md](plan.md).
 
 ## How it works
 
@@ -134,6 +128,7 @@ flowchart LR
 | **Extract** | [`patchsearch/extractor.py`](src/tokenos/patchsearch/extractor.py) | Turns evidence into one `FailureMemory`: an **executable assertion** when the evaluator supplies a trusted failing input and expected output, otherwise a **bounded summary**. |
 | **Validate** | [`patchsearch/validator.py`](src/tokenos/patchsearch/validator.py) | Checks assertions with Python's AST and literal parser, without executing candidate code on the host. |
 | **Retrieve** | [`patchsearch/retriever.py`](src/tokenos/patchsearch/retriever.py) | Deduplicates the task's memories: assertions first, then summaries newest first. |
+| **Detect repeats** | [`strategies.py`](src/tokenos/strategies.py) | Counts how often each failure recurred and, after two identical failures in a row, tells the model it is stuck and should change approach. Deduplication keeps memory bounded but would otherwise hide the repetition. |
 | **Allocate** | [`allocator.py`](src/tokenos/allocator.py), [`store.py`](src/tokenos/store.py) | Optionally ranks memories from other tasks by *relevance × importance × confidence ÷ cost*. |
 | **Compile** | [`compiler.py`](src/tokenos/compiler.py) | Fits everything into the token budget and renders the prompt. |
 | **Run** | [`runtime.py`](src/tokenos/runtime.py) | Loops over attempts on one task. [`runner.py`](src/tokenos/runner.py) does the same across a dataset, in parallel, for benchmarking. |
@@ -153,8 +148,8 @@ taken from the ablations above:
    raises `ContextBudgetError` instead of truncating it.
 2. **Executable assertions** from this task.
 3. **Summaries** from this task, newest first.
-4. **The latest completion**, kept or dropped whole. Truncated code would
-   mislead the model more than no code.
+4. **The latest valid completion** and its test output, kept or dropped
+   whole. Truncated code would mislead the model more than no code.
 5. **Memories from other tasks** get whatever budget is left.
 
 Token counts are estimated conservatively, so no tokenizer dependency is
@@ -166,7 +161,7 @@ token; dividing by 3.0 overestimates every one of them.
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m pytest            # 151 tests, no network or Docker needed
+python -m pytest            # 165 tests, no network or Docker needed
 ```
 
 ### Use the Runtime with your own model and tests
@@ -239,8 +234,8 @@ $ tokenos sweep 20260901T024612Z-bf19df --budgets 4000,1500,1000
       1000: 66771 tokens, 48 trimmed (code dropped 47, memories dropped 18), ...
 ```
 
-At the default budget of 4,000 tokens nothing is cut, because bounded memory
-peaks at 1,775 tokens. Tighter budgets drop the code first, and a live run
+At the default budget of 8,000 tokens nothing is cut on this benchmark. Tighter
+budgets drop the code first, and a live run
 shows that costs correctness. With a budget of 1,000 tokens (run
 `20261007T033256Z-4affde`), with-code solved 16/32 against full history's
 24/32 in the same run (8 tasks lost, none gained, p = 0.008). It also solved
@@ -329,19 +324,28 @@ emulation on ARM Macs.
 ```bash
 tokenos benchmark \
   --dataset bigcodebench-hard --all --skip-unviable-tasks \
-  --strategies full-history,patchsearch-with-code \
-  --budget-usd 10 --concurrency 4
+  --strategies full-history,patchsearch-adaptive \
+  --max-attempts 10 --budget-usd 10 --concurrency 4
 ```
+
+`--max-output-tokens` defaults to 16,384. Reasoning tokens count against it,
+and at 4,096 a reasoning model ran out mid-answer on 13–23% of attempts.
 
 `--context-budget N` makes the context compiler enforce an N-token budget on
 the bounded-memory strategies, exactly as the Runtime does. Full history is
 never compiled. What the compiler kept or dropped for each request is logged
 in `events.jsonl`. Without the flag, prompts are identical to earlier runs.
 
-Strategies: `no-memory`, `full-history`, `patchsearch`,
-`patchsearch-with-code`, `patchsearch-explained` (discontinued, kept so past
-results can be reproduced), and `patchsearch-crosstask` (requires
-`--memory-store RUN_ID`).
+Strategies:
+
+- `patchsearch-adaptive`: **TokenOS**, the Runtime's default.
+- `full-history`: the unbounded baseline. `sliding-window` is the same, cut to
+  the newest attempts that fit `--context-budget` (required).
+- `no-memory`, `patchsearch` (memory, no code), `patchsearch-with-code` (latest
+  code, unparsed or not), `patchsearch-best-code` (fewest failing tests):
+  ablations.
+- `patchsearch-crosstask` (requires `--memory-store RUN_ID`) and
+  `patchsearch-explained` (discontinued): kept so past results reproduce.
 
 Each run writes `runs/<run-id>/`, which git ignores:
 
@@ -400,9 +404,11 @@ TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 python -m pytest -m docker
   planned FACT and DECISION types have no evidence behind them yet.
 - [x] **Phase 4:** cross-task store and heuristic token allocator
 - [x] **Phase 5:** `Runtime` and the budget-enforcing context compiler
-- [x] Replicate the headline result: token saving holds; correctness gap is not significant
-- [ ] More viable tasks (a fuller evaluator image), so a 3-in-64 gap can be resolved
 - [x] Measure what a binding budget costs: at 1,000 tokens with-code drops to 16/32 (vs 24/32 full history, p = 0.008)
+- [x] Fix the output cap and stuck loops; reach parity with full history at 37% fewer tokens, replicated
+- [ ] Held-out tasks (a fuller evaluator image), since stuck detection was designed on these 32
+- [ ] A second model, through `TOKENOS_PROVIDER_API=chat`
+- [ ] Equal-budget comparison: TokenOS vs `sliding-window` at the same context budget
 - [ ] A benchmark with recurring failure modes, so cross-task allocation can be tested fairly
 - [ ] **Phase 6:** full-benchmark evaluation with tables and graphs
 

@@ -226,7 +226,7 @@ class RunConfig:
     # chat-completions endpoint (Foundry open models, OpenRouter, vLLM, ...).
     provider_api: Literal["responses", "chat"] = "responses"
     reasoning_effort: str = "medium"
-    max_output_tokens: int = 4096
+    max_output_tokens: int = 16384
     max_attempts: int = 5
     concurrency: int = 4
     budget_usd: float = 10.0

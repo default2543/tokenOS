@@ -1035,6 +1035,34 @@ repeat counts on memories, an explicit STUCK directive after two identical
 failures, and the latest valid attempt's raw test output (bounded to 1,500
 characters).
 
+### Stuck detection — measured and replicated, 2026-10-07
+
+Runs `20261007T055643Z-cd5774` (with with-code as a control) and
+`20261007T065630Z-1cba26` (replication), ten attempts, 16,384-token output
+cap.
+
+| run | full-history | adaptive | discordant (fh / ad) | tokens vs fh |
+|---|---|---|---|---|
+| first | 27/32 | 28/32 | 2 / 3 | -41.5% |
+| replication | 24/32 | 25/32 | 2 / 3 | -32.6% |
+| **pooled** | **51/64** | **53/64** | **4 / 6 (p = 0.75)** | **-36.7%** |
+
+Per solve, adaptive cost 18,786 tokens against 30,821 (-39%); input tokens
+fell 63%. In the first run, with-code repeated its usual result (24/32), and
+adaptive beat it on 5 tasks while losing 1, including both stuck tasks (326,
+785), solved by attempts 3 and 4. The STUCK directive fired on 17 of 113 calls
+and was followed directly by a pass twice; the raw test output appears to have
+done more on 326 and 785.
+
+**This is the first configuration that does not trail full history.** The
+claim is parity at substantially lower cost, not superiority: the solve
+difference is well inside the noise. Caveat: the mechanism was designed after
+looking at failures in run `20261007T045053Z-f3837c` on the same 32 tasks, so
+held-out tasks are the next test. Adaptive is now the Runtime's default
+strategy, with the default context budget raised to 8,000 (adaptive prompts
+reach about 4,300 estimated tokens, so 4,000 would have dropped code) and the
+default output cap to 16,384.
+
 ---
 
 ## Phase 6 — Large Evaluation

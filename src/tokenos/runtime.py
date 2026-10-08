@@ -4,7 +4,7 @@ The benchmark runner compares strategies across a dataset. The runtime is what
 the comparison was for: it solves a single task with the strategy that won,
 under a context budget the caller chooses.
 
-    runtime = Runtime(context_budget=4000)
+    runtime = Runtime(context_budget=8000)
     result = runtime.run(problem)
 
 Each attempt flows through the same pieces the benchmark measured -- task-local
@@ -40,8 +40,8 @@ from tokenos.runner import Evaluator, Provider, score_output
 from tokenos.store import MemoryStore
 from tokenos.strategies import PATCHSEARCH_STRATEGIES, system_instructions
 
-DEFAULT_STRATEGY: StrategyName = "patchsearch-with-code"
-DEFAULT_CONTEXT_BUDGET = 4000
+DEFAULT_STRATEGY: StrategyName = "patchsearch-adaptive"
+DEFAULT_CONTEXT_BUDGET = 8000
 
 
 @dataclass(frozen=True, slots=True)
