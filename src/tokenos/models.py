@@ -238,6 +238,9 @@ class RunConfig:
     # Token budget the context compiler enforces on bounded-memory strategies;
     # None leaves prompts exactly as retrieval produced them.
     context_budget: int | None = None
+    # Abandon a bounded-memory trajectory after this many identical failures in
+    # a row; None retries until max_attempts.
+    stop_after_identical: int | None = None
     created_at: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 

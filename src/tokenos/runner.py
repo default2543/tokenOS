@@ -28,6 +28,7 @@ from tokenos.strategies import (
     PATCHSEARCH_STRATEGIES,
     build_prompt,
     parse_completion,
+    stuck_streak,
     system_instructions,
 )
 
@@ -269,6 +270,18 @@ class BenchmarkRunner:
             self.store.append("attempt_completed", record=record.to_dict())
             history.append(record)
             if evaluation.passed:
+                return
+            limit = self.config.stop_after_identical
+            if patch_strategy and limit is not None and stuck_streak(history) >= limit:
+                # Most output is spent on trajectories that never pass; a run
+                # of identical failures is the cheapest signal that this one won't.
+                self.store.append(
+                    "trajectory_abandoned",
+                    task_id=problem.task_id,
+                    strategy=strategy,
+                    attempt=attempt,
+                    identical_failures=stuck_streak(history),
+                )
                 return
 
     def _history(self, strategy: StrategyName, task_id: str) -> list[AttemptRecord]:

@@ -404,3 +404,69 @@ def test_full_history_is_never_compiled(tmp_path: Path) -> None:
     summary = BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
     assert summary["strategies"]["full-history"]["solved_tasks"] == 1
     assert "PREVIOUS ATTEMPTS" in provider.prompts[1]
+
+
+class AlwaysWrongProvider(FakeProvider):
+    def generate(self, prompt: str, *, instructions: str | None = None) -> ModelResponse:
+        self.prompts.append(prompt)
+        return ModelResponse(
+            output_text='{"completion":"    return False"}',
+            response_id="resp",
+            request_id="req",
+            usage=ModelUsage(input_tokens=20, output_tokens=10),
+            latency_seconds=0.01,
+        )
+
+
+def _stuck_run(tmp_path: Path, strategy: str, stop: int | None, run_id: str = "run"):
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id=run_id,
+        strategies=(strategy,),
+        task_ids=(problem.task_id,),
+        dataset_path="data.gz",
+        max_attempts=5,
+        concurrency=1,
+        input_usd_per_mtok=1,
+        cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1,
+        stop_after_identical=stop,
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    provider = AlwaysWrongProvider()
+    BenchmarkRunner(config, provider, FakeEvaluator(), store).run([problem])
+    return store, provider
+
+
+def test_trajectory_is_abandoned_after_identical_failures(tmp_path: Path) -> None:
+    store, provider = _stuck_run(tmp_path, "patchsearch-adaptive", stop=2)
+    assert len(provider.prompts) == 2
+    abandoned = [e for e in store.events() if e["type"] == "trajectory_abandoned"]
+    assert abandoned and abandoned[0]["identical_failures"] == 2
+
+
+def test_without_a_stop_limit_every_attempt_runs(tmp_path: Path) -> None:
+    _, provider = _stuck_run(tmp_path, "patchsearch-adaptive", stop=None)
+    assert len(provider.prompts) == 5
+
+
+def test_full_history_is_never_abandoned(tmp_path: Path) -> None:
+    # It stores no memories, so it has no failure fingerprints to compare.
+    _, provider = _stuck_run(tmp_path, "full-history", stop=2)
+    assert len(provider.prompts) == 5
+
+
+def test_stop_simulation_matches_a_live_stop(tmp_path: Path) -> None:
+    from tokenos.replay import stop_simulation
+
+    store, _ = _stuck_run(tmp_path, "patchsearch-adaptive", stop=None, run_id="full")
+    never, at_two = stop_simulation(store.completed_attempts(), [2])[
+        "patchsearch-adaptive"
+    ]
+    assert (never["attempts"], never["abandoned"]) == (5, 0)
+    assert (at_two["attempts"], at_two["abandoned"], at_two["solved"]) == (2, 1, 0)
+    assert at_two["output_tokens"] == 2 * 10
+
+    live, _ = _stuck_run(tmp_path, "patchsearch-adaptive", stop=2, run_id="live")
+    assert len(live.completed_attempts()) == at_two["attempts"]

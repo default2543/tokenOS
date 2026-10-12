@@ -38,7 +38,11 @@ from tokenos.patchsearch.retriever import retrieve_with_store
 from tokenos.provider import AzureOpenAIProvider
 from tokenos.runner import Evaluator, Provider, score_output
 from tokenos.store import MemoryStore
-from tokenos.strategies import PATCHSEARCH_STRATEGIES, system_instructions
+from tokenos.strategies import (
+    PATCHSEARCH_STRATEGIES,
+    stuck_streak,
+    system_instructions,
+)
 
 DEFAULT_STRATEGY: StrategyName = "patchsearch-adaptive"
 DEFAULT_CONTEXT_BUDGET = 8000
@@ -147,6 +151,7 @@ class Runtime:
         evaluator: Evaluator | None = None,
         strategy: StrategyName = DEFAULT_STRATEGY,
         max_attempts: int = 5,
+        stop_after_identical: int | None = None,
         memory_store: MemoryStore | None = None,
         budget_usd: float = 1.0,
         evaluator_image: str | None = None,
@@ -162,6 +167,8 @@ class Runtime:
             raise ConfigurationError("context_budget must be positive")
         if max_attempts < 1:
             raise ConfigurationError("max_attempts must be positive")
+        if stop_after_identical is not None and stop_after_identical < 1:
+            raise ConfigurationError("stop_after_identical must be positive")
         if config is None:
             if provider is None:
                 # Real calls cost money, so they carry a real spend guard.
@@ -177,7 +184,11 @@ class Runtime:
                 )
             else:
                 config = _local_config(strategy, max_attempts)
-        config = replace(config, max_attempts=max_attempts)
+        config = replace(
+            config,
+            max_attempts=max_attempts,
+            stop_after_identical=stop_after_identical,
+        )
         if evaluator_image is not None:
             config = replace(config, evaluator_image=evaluator_image)
         if provider is None:
@@ -266,6 +277,10 @@ class Runtime:
             history.append(record)
             attempts.append(RuntimeAttempt(record=record, context=context))
             if evaluation.passed:
+                break
+            limit = self.config.stop_after_identical
+            if limit is not None and stuck_streak(history) >= limit:
+                stop_reason = "abandoned_stuck"
                 break
         else:
             stop_reason = "max_attempts"

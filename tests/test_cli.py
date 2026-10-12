@@ -139,3 +139,17 @@ def test_sliding_window_requires_a_context_budget(tmp_path) -> None:
                  "--task-ids", "HumanEval/0", "--strategies", "sliding-window"]
             )
         )
+
+
+def test_stop_after_identical_is_parsed_for_benchmark_and_solve() -> None:
+    bench = build_parser().parse_args(["benchmark", "--all", "--stop-after-identical", "4"])
+    assert bench.stop_after_identical == 4
+    solve = build_parser().parse_args(["solve", "HumanEval/0", "--stop-after-identical", "4"])
+    assert solve.stop_after_identical == 4
+    assert build_parser().parse_args(["benchmark", "--all"]).stop_after_identical is None
+
+
+def test_stopsim_pools_several_runs() -> None:
+    args = build_parser().parse_args(["stopsim", "run-a", "run-b", "--k", "3,4"])
+    assert args.run_ids == ["run-a", "run-b"]
+    assert args.k == "3,4"

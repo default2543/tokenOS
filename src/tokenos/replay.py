@@ -1,9 +1,11 @@
-"""Offline analysis of recorded runs: context growth and budget sweeps.
+"""Offline analysis of recorded runs: context growth, budget sweeps, stopping.
 
-Both read a completed run's append-only records and spend no tokens. Growth
+All read a completed run's append-only records and spend no tokens. Growth
 uses API-reported input tokens, so it is measured rather than estimated. A
 sweep recompiles every recorded bounded-memory attempt under candidate budgets
-to show what each budget would have cut before paying to find out.
+to show what each budget would have cut before paying to find out. A stop
+simulation truncates trajectories where an early-stopping rule would have
+ended them; because stopping only removes later attempts, it is exact.
 """
 
 from __future__ import annotations
@@ -14,7 +16,11 @@ from collections.abc import Iterable, Sequence
 from tokenos.compiler import ContextBudgetError, compile_context
 from tokenos.models import AttemptRecord, Problem
 from tokenos.patchsearch.retriever import retrieve_with_store
-from tokenos.strategies import PATCHSEARCH_STRATEGIES, system_instructions
+from tokenos.strategies import (
+    PATCHSEARCH_STRATEGIES,
+    stuck_streak,
+    system_instructions,
+)
 
 
 def context_growth(records: Iterable[AttemptRecord]) -> dict[str, list[dict]]:
@@ -116,3 +122,50 @@ def budget_sweep(
         ]
         for strategy, by_budget in totals.items()
     }
+
+
+def stop_simulation(
+    records: Iterable[AttemptRecord], limits: Sequence[int]
+) -> dict[str, list[dict]]:
+    """What stopping after K identical failures in a row would have changed.
+
+    Each recorded trajectory is cut at the first failed attempt whose stuck
+    streak reaches K -- the same rule `--stop-after-identical K` enforces live.
+    Attempts before the cut happened exactly as recorded, so solves kept and
+    tokens spent are measured, not estimated.
+    """
+    result: dict[str, list[dict]] = {}
+    for strategy, task_items in _by_strategy(_trajectories(records)).items():
+        rows = [_stop_row(task_items, None)]
+        rows.extend(_stop_row(task_items, limit) for limit in limits)
+        result[strategy] = rows
+    return result
+
+
+def _by_strategy(
+    trajectories: dict[tuple[str, str], list[AttemptRecord]],
+) -> dict[str, list[list[AttemptRecord]]]:
+    grouped: dict[str, list[list[AttemptRecord]]] = defaultdict(list)
+    for (strategy, _), items in sorted(trajectories.items()):
+        grouped[strategy].append(items)
+    return grouped
+
+
+def _stop_row(trajectories: list[list[AttemptRecord]], limit: int | None) -> dict:
+    row = {"stop_after_identical": limit, "trajectories": len(trajectories),
+           "solved": 0, "abandoned": 0, "attempts": 0, "output_tokens": 0,
+           "input_tokens": 0, "estimated_cost_usd": 0.0}
+    for items in trajectories:
+        for index, record in enumerate(items):
+            row["attempts"] += 1
+            row["output_tokens"] += record.usage.output_tokens
+            row["input_tokens"] += record.usage.input_tokens
+            row["estimated_cost_usd"] += record.estimated_cost_usd
+            if record.evaluation.passed:
+                row["solved"] += 1
+                break
+            if limit is not None and stuck_streak(items[: index + 1]) >= limit:
+                row["abandoned"] += index + 1 < len(items)
+                break
+    row["estimated_cost_usd"] = round(row["estimated_cost_usd"], 6)
+    return row

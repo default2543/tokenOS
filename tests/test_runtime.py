@@ -338,3 +338,18 @@ def test_growth_and_sweep_commands(tmp_path: Path, capsys) -> None:
     assert main(["sweep", "run", "--runs-root", str(tmp_path), "--budgets", "4000"]) == 0
     out = capsys.readouterr().out
     assert "1 prompts reproduced byte-for-byte" in out
+
+
+def test_runtime_gives_up_after_identical_failures() -> None:
+    provider = ScriptedProvider(["    return x + 1\n"] * 5)
+    runtime = Runtime(
+        None,
+        provider=provider,
+        evaluator=DoublingEvaluator(),
+        max_attempts=5,
+        stop_after_identical=3,
+    )
+    result = runtime.run(PROBLEM)
+    assert not result.passed
+    assert len(result.attempts) == 3
+    assert result.stop_reason == "abandoned_stuck"

@@ -40,7 +40,7 @@ from tokenos.preflight import (
     write_report,
 )
 from tokenos.provider import AzureOpenAIProvider
-from tokenos.replay import budget_sweep, context_growth
+from tokenos.replay import budget_sweep, context_growth, stop_simulation
 from tokenos.runner import BenchmarkRunner
 from tokenos.runtime import DEFAULT_CONTEXT_BUDGET, DEFAULT_STRATEGY, Runtime
 from tokenos.store import MemoryStore
@@ -122,6 +122,11 @@ def build_parser() -> argparse.ArgumentParser:
         "are truncated JSON and score as invalid_output",
     )
     benchmark.add_argument(
+        "--stop-after-identical",
+        type=int,
+        help="abandon a bounded-memory trajectory after K identical failures in a row",
+    )
+    benchmark.add_argument(
         "--context-budget",
         type=int,
         help="token budget the context compiler enforces on bounded-memory "
@@ -165,6 +170,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_STRATEGY,
     )
     solve.add_argument("--max-attempts", type=int, default=5)
+    solve.add_argument(
+        "--stop-after-identical",
+        type=int,
+        help="give up after K identical failures in a row",
+    )
     solve.add_argument("--budget-usd", type=float, default=1.0)
     solve.add_argument("--evaluator-image")
     solve.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
@@ -190,6 +200,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     sweep.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     sweep.add_argument("--json", action="store_true")
+
+    stopsim = subparsers.add_parser(
+        "stopsim",
+        help="replay runs as if trajectories stopped after K identical failures (no tokens)",
+    )
+    stopsim.add_argument("run_ids", nargs="+", help="one or more runs, pooled")
+    stopsim.add_argument(
+        "--k", default="2,3,4,5", help="comma-separated identical-failure limits"
+    )
+    stopsim.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
+    stopsim.add_argument("--json", action="store_true")
     return parser
 
 
@@ -389,6 +410,8 @@ def _preflight_config(
 def command_benchmark(args: argparse.Namespace) -> int:
     if args.max_output_tokens <= 0:
         raise ConfigurationError("--max-output-tokens must be positive")
+    if args.stop_after_identical is not None and args.stop_after_identical < 1:
+        raise ConfigurationError("--stop-after-identical must be at least 1")
     if args.context_budget is not None:
         if args.context_budget <= 0:
             raise ConfigurationError("--context-budget must be positive")
@@ -474,6 +497,7 @@ def command_benchmark(args: argparse.Namespace) -> int:
         evaluator_image=evaluator_image,
         context_budget=args.context_budget,
         max_output_tokens=args.max_output_tokens,
+        stop_after_identical=args.stop_after_identical,
     )
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)
@@ -547,6 +571,7 @@ def command_solve(args: argparse.Namespace) -> int:
         args.context_budget,
         strategy=args.strategy,
         max_attempts=args.max_attempts,
+        stop_after_identical=args.stop_after_identical,
         memory_store=memory_store,
         budget_usd=args.budget_usd,
         evaluator_image=args.evaluator_image or default_image,
@@ -652,6 +677,54 @@ def command_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_stopsim(args: argparse.Namespace) -> int:
+    limits = []
+    for raw in args.k.split(","):
+        if raw.strip():
+            value = int(raw)
+            if value < 1:
+                raise ConfigurationError("--k values must be at least 1")
+            limits.append(value)
+    records = []
+    for run_id in args.run_ids:
+        attempts = EventStore(args.runs_root, run_id).completed_attempts()
+        # Pooled runs repeat task IDs; keep each run's trajectories separate.
+        if len(args.run_ids) > 1:
+            attempts = [
+                replace(item, task_id=f"{run_id}/{item.task_id}") for item in attempts
+            ]
+        records.extend(attempts)
+    simulation = stop_simulation(records, limits)
+    if args.json:
+        print(json.dumps(simulation, indent=2, sort_keys=True))
+        return 0
+    if not simulation:
+        print("No bounded-memory trajectories to replay")
+        return 0
+    print(f"Stop-when-stuck simulation, {len(args.run_ids)} run(s) (recorded usage)")
+    for strategy, rows in simulation.items():
+        base = rows[0]
+        print(f"  {strategy}: {base['trajectories']} trajectories")
+        for row in rows:
+            label = (
+                "never stop" if row["stop_after_identical"] is None
+                else f"K={row['stop_after_identical']}"
+            )
+            print(
+                f"    {label:>10}: solved {row['solved']} "
+                f"({row['solved'] - base['solved']:+d}), "
+                f"abandoned {row['abandoned']}, "
+                f"output {_change(row['output_tokens'], base['output_tokens'])}, "
+                f"cost ${row['estimated_cost_usd']:.2f} "
+                f"({_change(row['estimated_cost_usd'], base['estimated_cost_usd'])})"
+            )
+    return 0
+
+
+def _change(value: float, base: float) -> str:
+    return f"{value / base - 1:+.1%}" if base else "n/a"
+
+
 def _print_summary(summary: dict) -> None:
     state = "complete" if summary.get("complete") else "partial"
     print(f"Run {summary['run_id']}: {state}")
@@ -688,6 +761,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_growth(args)
         if args.command == "sweep":
             return command_sweep(args)
+        if args.command == "stopsim":
+            return command_stopsim(args)
     except (
         ConfigurationError,
         ContextBudgetError,
