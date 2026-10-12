@@ -1114,6 +1114,55 @@ Next: a second held-out run to separate the deficit from noise, and a stronger
 stuck intervention (e.g. withholding the looping code, or regression-aware
 prompting) evaluated on held-out tasks only.
 
+### Output cost — 2026-10-12
+
+Output is 88–94% of estimated cost (6x the input price) and TokenOS only
+shrinks input, which is why its token saving outran its cost saving. Across
+the four ten-attempt adaptive runs: reasoning is 82–86% of output tokens; a
+retry produces about 2.5x the output of a first attempt; and **53–66% of all
+output is spent on trajectories that never pass**.
+
+**Stopping stuck trajectories (measured exactly by replay).** Stopping only
+truncates, so recorded runs give its effect without new runs
+(`tokenos stopsim`, 244 adaptive trajectories, 202 solves):
+
+| stop after K identical failures | solves | abandoned | output | cost |
+|---|---|---|---|---|
+| never | 202 | 0 | — | $13.37 |
+| 5 | 199 (-3) | 19 | -11.5% | -11.5% |
+| **4** | **198 (-4)** | 29 | **-19.2%** | **-19.1%** |
+| 3 | 191 (-11) | 42 | -28.1% | -28.0% |
+| 2 | 181 (-21) | 58 | -43.8% | -43.6% |
+
+A plain attempt cap is worse at every comparable point (8 attempts: -6 solves
+for -15% output). On the full 148-task run alone, K = 4 brings adaptive to
+$6.35 against full history's $7.92, losing 2 solves. Caveat: K was read off
+these same runs; the next live run should use K = 4 as fixed in advance.
+`--stop-after-identical K` enforces it live.
+
+**Context overflow.** From recorded prompt sizes in the full run, with a 15%
+margin for tokenizer differences: on an 8K-context server 14 of 148
+full-history trajectories cannot fit at all (5 of 148 at 16K); adaptive's
+longest prompt is 3,095 tokens, so none overflow.
+
+**Reasoning effort.** `gpt-5.4-mini` accepts `none`, `low`, `medium`, `high`,
+`xhigh` (`minimal` is rejected). Planned runs, adaptive on the 32 development
+tasks, each capped at $4, against the three existing medium-effort runs
+(28, 25, 24 solved): `--reasoning-effort low`, and `low` with
+`--retry-reasoning-effort medium`. **Pass criteria, fixed before running:**
+cost per solve at least 15% below the baseline mean, at least 24/32 solved,
+and invalid responses not above baseline.
+
+**Self-hosted serving and kernels (`colab/`).** Real TokenOS traffic is
+exported (`tokenos export-prompts`) and replayed on a Colab T4 against vLLM
+serving Qwen2.5-Coder-7B (AWQ): baseline, prefix caching, and n-gram prompt-
+lookup speculative decoding (a retry mostly rewrites code already in its
+prompt), plus quantization and concurrency. Hand-written Triton kernels for
+fused softmax and single-query decode attention (Qwen2.5-7B shapes, single and
+split-K) measure decode cost against context length as achieved bandwidth.
+The kernels pass their correctness tests under Triton's CPU interpreter; no
+GPU numbers exist until the notebooks are run.
+
 ---
 
 ## Phase 6 — Large Evaluation

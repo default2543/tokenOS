@@ -226,6 +226,8 @@ class RunConfig:
     # chat-completions endpoint (Foundry open models, OpenRouter, vLLM, ...).
     provider_api: Literal["responses", "chat"] = "responses"
     reasoning_effort: str = "medium"
+    # Effort for attempts after the first; None uses reasoning_effort throughout.
+    retry_reasoning_effort: str | None = None
     max_output_tokens: int = 16384
     max_attempts: int = 5
     concurrency: int = 4

@@ -31,7 +31,7 @@ from tokenos.dataset import (
     sorted_task_ids,
 )
 from tokenos.evaluator import DockerEvaluator, docker_status
-from tokenos.models import StrategyName
+from tokenos.models import RunConfig, StrategyName
 from tokenos.preflight import (
     PreflightError,
     preflight_path,
@@ -40,14 +40,25 @@ from tokenos.preflight import (
     write_report,
 )
 from tokenos.provider import AzureOpenAIProvider
-from tokenos.replay import budget_sweep, context_growth, stop_simulation
+from tokenos.replay import (
+    budget_sweep,
+    context_growth,
+    export_workload,
+    stop_simulation,
+)
 from tokenos.runner import BenchmarkRunner
 from tokenos.runtime import DEFAULT_CONTEXT_BUDGET, DEFAULT_STRATEGY, Runtime
 from tokenos.store import MemoryStore
-from tokenos.strategies import PATCHSEARCH_STRATEGIES, parse_completion
+from tokenos.strategies import (
+    PATCHSEARCH_STRATEGIES,
+    parse_completion,
+    system_instructions,
+)
 
 DEFAULT_RUNS_ROOT = Path("runs")
 DATASETS = ("humaneval-plus", "bigcodebench-hard")
+# What gpt-5.4-mini accepts (checked live, 2026-10-12).
+REASONING_EFFORTS = ("none", "low", "medium", "high", "xhigh")
 DATASET_DEFAULTS = {
     "humaneval-plus": (DEFAULT_DATASET_PATH, "v0.1.10", "tokenos-evalplus:0.3.1"),
     "bigcodebench-hard": (
@@ -120,6 +131,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=16384,
         help="per-request output cap, reasoning included; responses that hit it "
         "are truncated JSON and score as invalid_output",
+    )
+    benchmark.add_argument(
+        "--reasoning-effort",
+        choices=REASONING_EFFORTS,
+        default="medium",
+        help="reasoning effort for every attempt (Azure responses API only)",
+    )
+    benchmark.add_argument(
+        "--retry-reasoning-effort",
+        choices=REASONING_EFFORTS,
+        help="reasoning effort for attempts after the first; default: same",
     )
     benchmark.add_argument(
         "--stop-after-identical",
@@ -211,6 +233,15 @@ def build_parser() -> argparse.ArgumentParser:
     )
     stopsim.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     stopsim.add_argument("--json", action="store_true")
+
+    export = subparsers.add_parser(
+        "export-prompts",
+        help="write a run's requests as a JSONL serving workload (no tokens)",
+    )
+    export.add_argument("run_id")
+    export.add_argument("--out", type=Path, required=True)
+    export.add_argument("--strategies", help="comma-separated; default all")
+    export.add_argument("--runs-root", type=Path, default=DEFAULT_RUNS_ROOT)
     return parser
 
 
@@ -498,7 +529,16 @@ def command_benchmark(args: argparse.Namespace) -> int:
         context_budget=args.context_budget,
         max_output_tokens=args.max_output_tokens,
         stop_after_identical=args.stop_after_identical,
+        reasoning_effort=args.reasoning_effort,
+        retry_reasoning_effort=args.retry_reasoning_effort,
     )
+    if config.provider_api == "chat" and (
+        args.reasoning_effort != "medium" or args.retry_reasoning_effort
+    ):
+        raise ConfigurationError(
+            "reasoning effort is only sent by the responses API; chat mode "
+            "would silently ignore it"
+        )
     store = EventStore(args.runs_root, config.run_id, create=True)
     store.write_manifest(config)
     summary = BenchmarkRunner(
@@ -507,6 +547,7 @@ def command_benchmark(args: argparse.Namespace) -> int:
         DockerEvaluator(config),
         store,
         memory_store=memory_store,
+        retry_provider=_retry_provider(config),
     ).run(selected)
     _print_summary(summary)
     print(f"Artifacts: {store.run_dir}")
@@ -541,6 +582,7 @@ def command_resume(args: argparse.Namespace) -> int:
         AzureOpenAIProvider(config),
         DockerEvaluator(config),
         store,
+        retry_provider=_retry_provider(config),
     ).run(selected)
     _print_summary(summary)
     return 0 if summary["complete"] else 2
@@ -677,6 +719,15 @@ def command_sweep(args: argparse.Namespace) -> int:
     return 0
 
 
+def _retry_provider(config: RunConfig) -> AzureOpenAIProvider | None:
+    """A provider at the retry reasoning effort, when one is configured."""
+    if config.retry_reasoning_effort is None:
+        return None
+    return AzureOpenAIProvider(
+        replace(config, reasoning_effort=config.retry_reasoning_effort)
+    )
+
+
 def command_stopsim(args: argparse.Namespace) -> int:
     limits = []
     for raw in args.k.split(","):
@@ -718,6 +769,25 @@ def command_stopsim(args: argparse.Namespace) -> int:
                 f"cost ${row['estimated_cost_usd']:.2f} "
                 f"({_change(row['estimated_cost_usd'], base['estimated_cost_usd'])})"
             )
+    return 0
+
+
+def command_export_prompts(args: argparse.Namespace) -> int:
+    store, records = _run_records(args)
+    if args.strategies:
+        wanted = set(_strategies(args.strategies))
+        records = [item for item in records if item.strategy in wanted]
+    config = store.read_manifest()["config"]
+    instructions = system_instructions(config.get("dataset_name", "humaneval-plus"))
+    rows = export_workload(records, instructions)
+    args.out.parent.mkdir(parents=True, exist_ok=True)
+    with args.out.open("w", encoding="utf-8") as handle:
+        for row in rows:
+            handle.write(json.dumps(row, sort_keys=True) + "\n")
+    counts: dict[str, int] = {}
+    for row in rows:
+        counts[row["strategy"]] = counts.get(row["strategy"], 0) + 1
+    print(f"Wrote {len(rows)} requests to {args.out}: {counts}")
     return 0
 
 
@@ -763,6 +833,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             return command_sweep(args)
         if args.command == "stopsim":
             return command_stopsim(args)
+        if args.command == "export-prompts":
+            return command_export_prompts(args)
     except (
         ConfigurationError,
         ContextBudgetError,

@@ -169,3 +169,30 @@ def _stop_row(trajectories: list[list[AttemptRecord]], limit: int | None) -> dic
                 break
     row["estimated_cost_usd"] = round(row["estimated_cost_usd"], 6)
     return row
+
+
+def export_workload(records: Iterable[AttemptRecord], instructions: str) -> list[dict]:
+    """Every recorded request as a replayable serving workload.
+
+    One row per request, in the order a trajectory sent them, carrying the
+    exact prompt and system instructions plus what the API reported, so a
+    self-hosted server can replay the real traffic shape of each strategy.
+    """
+    rows = []
+    for record in sorted(
+        records, key=lambda item: (item.strategy, item.task_id, item.attempt)
+    ):
+        rows.append(
+            {
+                "run_id": record.run_id,
+                "strategy": record.strategy,
+                "task_id": record.task_id,
+                "attempt": record.attempt,
+                "instructions": instructions,
+                "prompt": record.prompt,
+                "recorded_input_tokens": record.usage.input_tokens,
+                "recorded_output_tokens": record.usage.output_tokens,
+                "passed": record.evaluation.passed,
+            }
+        )
+    return rows

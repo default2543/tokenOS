@@ -7,7 +7,7 @@ Learn from every failed attempt without replaying all of them.
 
 ![Python 3.12](https://img.shields.io/badge/python-3.12-3776AB?logo=python&logoColor=white)
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
-![Tests](https://img.shields.io/badge/tests-165%20passing-brightgreen)
+![Tests](https://img.shields.io/badge/tests-181%20passing-brightgreen)
 ![Dependencies](https://img.shields.io/badge/runtime%20deps-3-blue)
 
 [Results](#results) · [How it works](#how-it-works) · [Quickstart](#quickstart) ·
@@ -176,7 +176,7 @@ token; dividing by 3.0 overestimates every one of them.
 ```bash
 python3.12 -m venv .venv && source .venv/bin/activate
 python -m pip install -e '.[dev]'
-python -m pytest            # 165 tests, no network or Docker needed
+python -m pytest            # 181 tests, no network or Docker needed
 ```
 
 ### Use the Runtime with your own model and tests
@@ -220,6 +220,8 @@ enforces a spend cap (`budget_usd`, $1 by default).
 | `tokenos report RUN_ID` | | Print a run's summary |
 | `tokenos growth RUN_ID` | | Prompt size by attempt, from API-reported usage |
 | `tokenos sweep RUN_ID` | | Re-run the compiler on recorded attempts at several budgets |
+| `tokenos stopsim RUN_ID...` | | Replay runs as if stuck trajectories stopped after K identical failures |
+| `tokenos export-prompts RUN_ID` | | Write a run's requests as a JSONL serving workload (see [`colab/`](colab/)) |
 | `tokenos preflight` | | Find the tasks whose reference solution runs in the evaluator image |
 | `tokenos doctor` | opt-in | Check local setup; `--live` makes one small request |
 | `tokenos dataset fetch` | | Download a pinned dataset |
@@ -345,6 +347,17 @@ tokenos benchmark \
 
 `--max-output-tokens` defaults to 16,384. Reasoning tokens count against it,
 and at 4,096 a reasoning model ran out mid-answer on 13–23% of attempts.
+
+Output is about 90% of cost, so three flags target it:
+
+- `--stop-after-identical K` abandons a bounded-memory trajectory after K
+  identical failures in a row. Over half of all output went to trajectories
+  that never passed; on four recorded runs, K = 4 cuts output and cost 19%
+  for 4 lost solves out of 202 (`tokenos stopsim` replays any run this way).
+- `--reasoning-effort` sets the effort for every attempt (`none`, `low`,
+  `medium`, `high`, `xhigh`; default `medium`).
+- `--retry-reasoning-effort` overrides it for attempts after the first, so a
+  run can think lightly first and harder only when it fails.
 
 `--context-budget N` makes the context compiler enforce an N-token budget on
 the bounded-memory strategies, exactly as the Runtime does. Full history is

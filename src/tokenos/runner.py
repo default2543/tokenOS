@@ -81,9 +81,12 @@ class BenchmarkRunner:
         evaluator: Evaluator,
         store: EventStore,
         memory_store: MemoryStore | None = None,
+        retry_provider: Provider | None = None,
     ) -> None:
         self.config = config
         self.provider = provider
+        # Serves attempts after the first, e.g. at a different reasoning effort.
+        self.retry_provider = retry_provider or provider
         self.evaluator = evaluator
         self.store = store
         # Frozen for the run's duration: a task's context must not depend on
@@ -203,7 +206,8 @@ class BenchmarkRunner:
             )
             total_started = time.monotonic()
             try:
-                response = self.provider.generate(prompt, instructions=instructions)
+                provider = self.provider if attempt == 1 else self.retry_provider
+                response = provider.generate(prompt, instructions=instructions)
             except Exception as exc:
                 self.budget.release(reservation)
                 self._stop_reason = "provider_error"

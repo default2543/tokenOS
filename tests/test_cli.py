@@ -153,3 +153,30 @@ def test_stopsim_pools_several_runs() -> None:
     args = build_parser().parse_args(["stopsim", "run-a", "run-b", "--k", "3,4"])
     assert args.run_ids == ["run-a", "run-b"]
     assert args.k == "3,4"
+
+
+def test_reasoning_effort_flags() -> None:
+    args = build_parser().parse_args(
+        ["benchmark", "--all", "--reasoning-effort", "low",
+         "--retry-reasoning-effort", "medium"]
+    )
+    assert (args.reasoning_effort, args.retry_reasoning_effort) == ("low", "medium")
+    default = build_parser().parse_args(["benchmark", "--all"])
+    assert (default.reasoning_effort, default.retry_reasoning_effort) == ("medium", None)
+    with pytest.raises(SystemExit):
+        build_parser().parse_args(["benchmark", "--all", "--reasoning-effort", "max"])
+
+
+def test_retry_provider_uses_the_retry_effort(monkeypatch) -> None:
+    from dataclasses import replace
+
+    from tokenos.cli import _retry_provider
+    from tokenos.models import RunConfig
+
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "test-key")
+    base = RunConfig(run_id="r", strategies=("patchsearch-adaptive",), task_ids=(),
+                     dataset_path="d", azure_endpoint="https://example",
+                     reasoning_effort="low")
+    assert _retry_provider(base) is None
+    provider = _retry_provider(replace(base, retry_reasoning_effort="medium"))
+    assert provider.config.reasoning_effort == "medium"

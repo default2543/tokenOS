@@ -470,3 +470,31 @@ def test_stop_simulation_matches_a_live_stop(tmp_path: Path) -> None:
 
     live, _ = _stuck_run(tmp_path, "patchsearch-adaptive", stop=2, run_id="live")
     assert len(live.completed_attempts()) == at_two["attempts"]
+
+
+def test_export_workload_keeps_exact_prompts_in_trajectory_order(tmp_path: Path) -> None:
+    from tokenos.replay import export_workload
+
+    store, provider = _stuck_run(tmp_path, "patchsearch-adaptive", stop=None)
+    rows = export_workload(store.completed_attempts(), "be terse")
+    assert [row["attempt"] for row in rows] == [1, 2, 3, 4, 5]
+    assert [row["prompt"] for row in rows] == provider.prompts
+    assert rows[0]["instructions"] == "be terse"
+    assert rows[0]["recorded_output_tokens"] == 10
+
+
+def test_retry_provider_serves_only_attempts_after_the_first(tmp_path: Path) -> None:
+    problem = Problem("HumanEval/0", "def f():\n", "f")
+    config = RunConfig(
+        run_id="run", strategies=("patchsearch-adaptive",),
+        task_ids=(problem.task_id,), dataset_path="data.gz", max_attempts=3,
+        concurrency=1, input_usd_per_mtok=1, cached_input_usd_per_mtok=0.1,
+        output_usd_per_mtok=1, retry_reasoning_effort="medium",
+    )
+    store = EventStore(tmp_path, config.run_id, create=True)
+    store.write_manifest(config)
+    first, retries = AlwaysWrongProvider(), AlwaysWrongProvider()
+    BenchmarkRunner(config, first, FakeEvaluator(), store,
+                    retry_provider=retries).run([problem])
+    assert len(first.prompts) == 1
+    assert len(retries.prompts) == 2
