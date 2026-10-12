@@ -38,27 +38,40 @@ result.total_tokens  # what the whole trajectory cost
 
 ## Results
 
-Measured on the **32 BigCodeBench-Hard tasks** whose reference solutions pass
-in the evaluator sandbox. Each task gets up to **ten attempts**. Model:
-`gpt-5.4-mini`. Two runs with identical settings, pooled (64 paired
-trajectories per strategy):
+Model: `gpt-5.4-mini`, up to **ten attempts** per task, BigCodeBench-Hard.
 
-| Strategy | What each retry sees | Solved | Tokens | Input tokens | Tokens per solve |
+**On the 32 tasks used for development** (three replicated runs, 96 paired
+trajectories):
+
+| Strategy | What each retry sees | Solved | Tokens | Input tokens | Est. cost |
 |---|---|:-:|--:|--:|--:|
-| Full history | every completion + every failure | 51/64 | 1,571,888 | 723,955 | 30,821 |
-| **TokenOS** (`patchsearch-adaptive`) | bounded memory + latest valid code + stuck detection | **53/64** | **995,660** | **268,984** | **18,786** |
+| Full history | every completion + every failure | 78/96 | — | — | $6.88 |
+| **TokenOS** (`patchsearch-adaptive`) | bounded memory + latest valid code + stuck detection | 77/96 | **−36.5%** | **−63.7%** | **$5.52 (−19.6%)** |
 
-> **37% fewer tokens, 63% less input, 39% less per solved problem, at equal
-> correctness.** TokenOS solved more tasks in both runs (28 vs 27, then 25 vs
-> 24). The difference in solves is not significant (McNemar exact test, 6 vs 4
-> discordant tasks, p = 0.75), so the accurate claim is *parity*, not
-> superiority. The token saving held in both runs (41%, then 33%).
+> **Parity at 36% fewer tokens and 20% lower cost.** The solve difference is
+> noise (McNemar exact test, 8 vs 7 discordant, p = 1.0). TokenOS led the first
+> two runs and trailed the third, which is why the claim is parity, not
+> superiority.
 
-Runs `20261007T055643Z-cd5774` and `20261007T065630Z-1cba26`, $9.73 together.
+**On 106 held-out tasks** (full evaluator on an Azure VM, one run, run
+`20261011T184316Z-8039bc`):
+
+| Strategy | Solved | Tokens | Est. cost |
+|---|:-:|--:|--:|
+| Full history | 98/106 | 1,531,976 | $4.66 |
+| TokenOS | 93/106 | 1,301,669 (−15.0%) | $4.59 (−1.6%) |
+
+> **The saving shrinks and the cost saving disappears on held-out tasks.** They
+> are easier: 45 of 106 were solved on the first try, so few trajectories ran
+> long enough for full history's prompt to grow, and the tasks TokenOS failed
+> ran all ten attempts, adding output tokens. The five-task deficit is not
+> significant (6 vs 1 discordant, p = 0.125), and three of the six losses were
+> tasks full history solved on its *first* attempt, before memory plays any
+> part. Stuck detection fired on four of the losses without rescuing them.
 
 ### Context growth
 
-Mean input tokens per request by attempt, averaged over the two runs
+Mean input tokens per request by attempt, averaged over the first two development runs
 (reported by the API):
 
 ```mermaid
@@ -73,7 +86,7 @@ xychart-beta
 Full history grows with every attempt. TokenOS levels off after the first
 retry, so the saving grows the longer an agent keeps trying.
 
-### How it got here
+### How it got here (development tasks)
 
 Each step was a measured fix for a measured failure:
 
@@ -82,7 +95,7 @@ Each step was a measured fix for a measured failure:
 | Bounded failure memory | No memory solves 10/32; memory alone 18/32 |
 | Keep the latest code | 18/32 → 21/32, and 18% cheaper per solve than memory alone |
 | Raise the output cap 4K → 16K | Every invalid response (13–23% of attempts) had hit the cap; at 16K, 1 in 405 |
-| Detect repeated failures | Bounded memory was losing tasks by making the same mistake up to ten times running, because identical failures merge into one memory. Repeat counts, a STUCK directive and the latest raw test output turned a 2-task deficit (24 vs 26) into a 1-task lead |
+| Detect repeated failures | Bounded memory was losing tasks by making the same mistake up to ten times running, because identical failures merge into one memory. Repeat counts, a STUCK directive and the latest raw test output turned a 2-task deficit (24 vs 26) into parity (77 vs 78 of 96 over three runs). It did not transfer to held-out tasks |
 
 And two things that did **not** work, recorded rather than hidden:
 
@@ -95,14 +108,16 @@ And two things that did **not** work, recorded rather than hidden:
 
 ### Caveats
 
-- **Small sample.** Only 32 tasks run in the default sandbox, and identical
-  runs differ by about three tasks. Parity at n = 64 rules out a large
-  correctness cost, not a small one.
+- **The saving depends on trajectory length.** Full history's prompt grows
+  with every attempt; TokenOS's does not. On tasks solved in one or two
+  attempts there is little to save, and output tokens (6x the price of input)
+  dominate cost.
 - **One model.** Every result is `gpt-5.4-mini`. Open models run through
   `TOKENOS_PROVIDER_API=chat` but have not been measured yet.
-- **The TokenOS strategy was tuned on these tasks.** Stuck detection was
-  designed after inspecting failures in run `20261007T045053Z-f3837c`, then
-  tested on two fresh runs. A held-out task set would be a stronger test.
+- **Stuck detection was tuned on the development tasks.** It rescued the loops
+  it was designed for (5 of 6) but not the held-out ones.
+- **One held-out run.** Development-task runs differ by about three tasks;
+  the held-out deficit needs a second run before it can be called real.
 
 The full record, including every negative result, is in [plan.md](plan.md).
 
@@ -405,8 +420,9 @@ TOKENOS_RUN_DOCKER_SECURITY_TESTS=1 python -m pytest -m docker
 - [x] **Phase 4:** cross-task store and heuristic token allocator
 - [x] **Phase 5:** `Runtime` and the budget-enforcing context compiler
 - [x] Measure what a binding budget costs: at 1,000 tokens with-code drops to 16/32 (vs 24/32 full history, p = 0.008)
-- [x] Fix the output cap and stuck loops; reach parity with full history at 37% fewer tokens, replicated
-- [ ] Held-out tasks (a fuller evaluator image), since stuck detection was designed on these 32
+- [x] Fix the output cap and stuck loops; parity with full history at 36% fewer tokens on development tasks, replicated three times
+- [x] Held-out tasks: full evaluator, 106 held-out tasks; saving shrinks to 15% tokens, no cost saving, non-significant 5-task deficit
+- [ ] A second held-out run, and a stuck intervention that works on held-out tasks
 - [ ] A second model, through `TOKENOS_PROVIDER_API=chat`
 - [ ] Equal-budget comparison: TokenOS vs `sliding-window` at the same context budget
 - [ ] A benchmark with recurring failure modes, so cross-task allocation can be tested fairly

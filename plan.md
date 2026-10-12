@@ -1063,6 +1063,57 @@ strategy, with the default context budget raised to 8,000 (adaptive prompts
 reach about 4,300 estimated tokens, so 4,000 would have dropped code) and the
 default output cap to 16,384.
 
+### Third replication — 2026-10-11
+
+Run `20261011T171248Z-087afa`, same configuration: full history 27/32,
+adaptive 24/32 (4 / 1 discordant), 36.4% fewer tokens. Pooled over three runs:
+**full history 78/96, adaptive 77/96 (8 / 7 discordant, p = 1.0)**; tokens
+-36.5%, input -63.7%, estimated cost -19.6% ($5.52 vs $6.88). The earlier
+two-run lead was noise; the claim on these 32 tasks is parity. Twenty of the
+32 tasks resolve identically every run; the variance comes from ten.
+
+### Held-out tasks — full BigCodeBench-Hard, 2026-10-11
+
+Run `20261011T184316Z-8039bc` on an Azure VM (Standard_D4s_v4) with the full
+official evaluator (`tokenos-bigcodebench-full:0.3.0`): all 148 tasks, of which
+138 pass reference preflight. Ten attempts, 16,384 output cap, one run, $15.76
+estimated model spend. The 32 tasks above are where stuck detection was
+designed; the other 106 viable tasks are **held out**.
+
+| tasks | n | full history | adaptive | discordant (fh / ad) | p | tokens | cost |
+|---|---|---|---|---|---|---|---|
+| tuned | 32 | 26 | 25 | 3 / 2 | 1.0 | -41.4% | -20.9% |
+| **held-out** | **106** | **98** | **93** | **6 / 1** | **0.125** | **-15.0%** | **-1.6%** |
+| all viable | 138 | 124 | 118 | 9 / 3 | 0.146 | -24.6% | -7.8% |
+
+**The result does not transfer cleanly.** On held-out tasks adaptive trails by
+five, not significantly, and the cost saving disappears.
+
+- **The held-out tasks are easier.** 45 of 106 were solved on the first attempt
+  by both strategies; only 9 full-history trajectories reached attempt 5. The
+  token saving comes from long trajectories (full history reaches 8,103 input
+  tokens at attempt 10, adaptive 1,479), and there were few.
+- **Fewer tokens, not less cost.** Input fell 43%, but output rose 2.8%:
+  adaptive made 314 calls to full history's 271, because the tasks it failed
+  ran all ten attempts. Output is 6x the price of input.
+- **Half the correctness gap is first-attempt sampling.** On 3 of the 6
+  full-history-only tasks (1019, 1022, 89), full history passed on attempt 1,
+  where both strategies send essentially the same prompt. Conditioned on both
+  failing attempt 1, the split is 3 / 1.
+- **Stuck detection fires but does not rescue.** On four of the losses
+  adaptive failed with the same wrong answer ten times while the STUCK
+  directive was shown 6-8 times. Telling the model it is stuck is not enough to
+  change its approach on these tasks.
+
+**Consequences.** The defensible claim is narrower than "parity at a third
+fewer tokens": on the 32 tasks used for development, parity at 36% fewer tokens
+and 20% lower cost, replicated three times; on held-out tasks, 15% fewer tokens,
+no cost saving, and a non-significant five-task deficit in one run. The saving
+scales with trajectory length, so it is largest exactly where retries are long.
+Next: a second held-out run to separate the deficit from noise, and a stronger
+stuck intervention (e.g. withholding the looping code, or regression-aware
+prompting) evaluated on held-out tasks only.
+
 ---
 
 ## Phase 6 — Large Evaluation
