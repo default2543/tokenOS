@@ -359,6 +359,12 @@ Output is about 90% of cost, so three flags target it:
 - `--retry-reasoning-effort` overrides it for attempts after the first, so a
   run can think lightly first and harder only when it fails.
 
+On the development tasks, `--reasoning-effort low` solved 26 of 32 (medium:
+24–28) at a third of medium's cost per solve. Turning reasoning off (`none`)
+solved 21. Escalating to medium on retries kept 27 solved but saved only 16%,
+because retries are where the output is. One run per setting; see
+[plan.md](plan.md).
+
 `--context-budget N` makes the context compiler enforce an N-token budget on
 the bounded-memory strategies, exactly as the Runtime does. Full history is
 never compiled. What the compiler kept or dropped for each request is logged

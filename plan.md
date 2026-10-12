@@ -1153,6 +1153,30 @@ tasks, each capped at $4, against the three existing medium-effort runs
 cost per solve at least 15% below the baseline mean, at least 24/32 solved,
 and invalid responses not above baseline.
 
+**Reasoning effort — measured, 2026-10-12.** Adaptive, 32 development tasks,
+ten attempts, one run per arm, against the three medium-effort runs:
+
+| effort | run | solved | output tokens | reasoning tokens | cost | cost/solve vs medium | verdict |
+|---|---|---|---|---|---|---|---|
+| medium (3 runs) | baseline | 24–28 | 303K–432K | 247K–362K | $1.45–2.05 | — | — |
+| none | `2d6e12` | 21 | 74K | 0 | $0.47 | -69.5% | fails (< 24 solved) |
+| **low** | `1e6ee9` | **26** | 112K | 50K | **$0.61** | **-67.7%** | **passes** |
+| low, medium on retries | `f05eb0` | 27 | 345K | 286K | $1.65 | -16.0% | passes, barely |
+
+**Low effort keeps correctness at a third of the cost.** 26 solved sits inside
+medium's 24–28 band; reasoning tokens fell about six-fold. Escalating to
+medium on retries gives most of the saving back, because retries are where
+the output is. Turning reasoning off saves the most but loses about four tasks.
+Stopping after four identical failures on top of low effort gives 25 solved
+for $0.48.
+
+Caveats: one run per arm on the development tasks (runs vary by about three
+tasks); the `low` run was interrupted by a network drop on 8 requests and
+resumed with every completed attempt kept. Reasoning effort is a model
+setting, not a TokenOS mechanism: it would cut full history's cost too, so it
+changes the absolute bill, not the comparison between strategies. Next: the
+`low` arm on held-out tasks, with full history at low effort alongside.
+
 **Self-hosted serving and kernels (`colab/`).** Real TokenOS traffic is
 exported (`tokenos export-prompts`) and replayed on a Colab T4 against vLLM
 serving Qwen2.5-Coder-7B (AWQ): baseline, prefix caching, and n-gram prompt-
