@@ -216,13 +216,36 @@ def decode_attention_grouped(q, k, v, *, splits: int = 8, block_n: int = 64,
     return _merge(partial, m, l, q.dtype)
 
 
+@triton.jit
+def _merge_kernel(partial_ptr, m_ptr, l_ptr, out_ptr, splits,
+                  HEAD_DIM: tl.constexpr, BLOCK_S: tl.constexpr):
+    row = tl.program_id(0)  # one (batch, query head)
+    parts = tl.arange(0, BLOCK_S)
+    used = parts < splits
+    dims = tl.arange(0, HEAD_DIM)
+    m = tl.load(m_ptr + row * splits + parts, mask=used, other=float("-inf"))
+    l = tl.load(l_ptr + row * splits + parts, mask=used, other=0.0)
+    # Empty splits stored m = -inf, so their weight is exactly zero.
+    weight = tl.exp(m - tl.max(m, axis=0))
+    partial = tl.load(partial_ptr + (row * splits + parts[:, None]) * HEAD_DIM + dims[None, :],
+                      mask=used[:, None], other=0.0)
+    out = tl.sum(partial * weight[:, None], axis=0) / tl.sum(l * weight, axis=0)
+    tl.store(out_ptr + row * HEAD_DIM + dims, out.to(out_ptr.dtype.element_ty))
+
+
 def _merge(partial, m, l, dtype) -> torch.Tensor:
-    """Merge partial softmaxes: rescale each split to the global max."""
-    m_max = m.amax(dim=2, keepdim=True)
-    weight = torch.exp(m - m_max)  # [batch, heads, splits]
-    numerator = (partial * weight.unsqueeze(-1)).sum(dim=2)
-    denominator = (l * weight).sum(dim=2, keepdim=True)
-    return (numerator / denominator).to(dtype)
+    """Merge partial softmaxes, rescaling each split to the global max.
+
+    One fused launch: the eager version took six, which at short contexts
+    cost more than the attention itself.
+    """
+    batch, q_heads, splits, head_dim = partial.shape
+    out = torch.empty(batch, q_heads, head_dim, device=partial.device, dtype=dtype)
+    _merge_kernel[(batch * q_heads,)](
+        partial, m, l, out, splits,
+        HEAD_DIM=head_dim, BLOCK_S=triton.next_power_of_2(splits), num_warps=1,
+    )
+    return out
 
 
 def reference(q, k, v) -> torch.Tensor:

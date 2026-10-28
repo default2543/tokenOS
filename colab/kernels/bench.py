@@ -2,7 +2,9 @@
 
 Correctness first: no timing is reported for a kernel that disagrees with the
 reference. Timings are medians from `triton.testing.do_bench`, which warms up
-and synchronizes with CUDA events. Bandwidth is the minimum bytes the
+and synchronizes with CUDA events. Decode attention is also timed replayed
+from a CUDA graph, which removes Python launch overhead the way vLLM's decode
+does; that is the headline number. Bandwidth is the minimum bytes the
 operation must move divided by its median time, compared to the GPU's peak.
 """
 
@@ -33,6 +35,21 @@ PEAK_GBPS = {"Tesla T4": 320.0, "NVIDIA L4": 300.0,
 
 def _ms(fn) -> float:
     return triton.testing.do_bench(fn, warmup=25, rep=200, return_mode="median")
+
+
+def _ms_graph(fn, rep: int = 200) -> float | None:
+    """GPU time with launches replayed from a CUDA graph, as vLLM decodes.
+
+    Eager timing includes Python launch overhead, which at short contexts
+    exceeds the kernel's own time. Returns None if capture fails.
+    """
+    try:
+        try:
+            return triton.testing.do_bench_cudagraph(fn, rep=rep, return_mode="median")
+        except TypeError:  # older Triton without return_mode
+            return triton.testing.do_bench_cudagraph(fn, rep=rep)
+    except Exception:
+        return None
 
 
 def softmax_rows(device: str) -> list[dict]:
@@ -72,10 +89,13 @@ def decode_rows(device: str, batch: int, with_vllm: bool = False) -> list[dict]:
         moved = da.kv_bytes(k, v)
         for name, fn in impls.items():
             ms = _ms(fn)
+            graph_ms = _ms_graph(fn)
             rows.append({
                 "batch": batch, "context": context, "impl": name,
                 "us": round(ms * 1000, 2),
                 "gbps": round(moved / ms / 1e6, 1),
+                "graph_us": round(graph_ms * 1000, 2) if graph_ms else None,
+                "graph_gbps": round(moved / graph_ms / 1e6, 1) if graph_ms else None,
                 # One output token runs this once per layer.
                 "attention_ms_per_token_all_layers": round(ms * LAYERS, 3),
             })
@@ -110,8 +130,9 @@ def sweep_rows(device: str) -> dict:
                         try:
                             torch.testing.assert_close(run(), expected,
                                                        atol=2e-3, rtol=2e-2)
-                            ms = triton.testing.do_bench(run, warmup=10, rep=50,
-                                                         return_mode="median")
+                            ms = (_ms_graph(run, rep=50)
+                                  or triton.testing.do_bench(run, warmup=10, rep=50,
+                                                             return_mode="median"))
                         except Exception as error:  # e.g. out of shared memory
                             rows.append({"batch": batch, "context": context,
                                          "impl": name, "splits": splits,
@@ -152,11 +173,14 @@ def main(argv: list[str] | None = None) -> int:
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2))
     print(f"{gpu}: peak {report['peak_gbps']} GB/s")
+    print("  eager: launched from Python | graph: replayed from a CUDA graph")
     for row in report["decode_attention"]:
-        share = (f"  {100 * row['gbps'] / report['peak_gbps']:5.1f}% of peak"
-                 if report["peak_gbps"] else "")
+        graph = (f"{row['graph_us']:>9} us  {row['graph_gbps']:>6} GB/s"
+                 if row["graph_us"] else f"{'capture failed':>26}")
+        share = (f"  {100 * row['graph_gbps'] / report['peak_gbps']:5.1f}% of peak"
+                 if report["peak_gbps"] and row["graph_us"] else "")
         print(f"  b={row['batch']:<2} ctx={row['context']:<6} {row['impl']:<15} "
-              f"{row['us']:>9} us  {row['gbps']:>6} GB/s{share}")
+              f"eager {row['us']:>9} us | graph {graph}{share}")
     if "sweep" in report:
         print(f"\nSweep (best of {len(SWEEP_SPLITS) * len(SWEEP_BLOCK_N) * len(SWEEP_WARPS)}"
               f" configs each); grouped kernel uses mma.sync: "
