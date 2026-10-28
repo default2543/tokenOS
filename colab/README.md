@@ -91,6 +91,30 @@ Two problems this run exposed, both addressed in the current code:
   Turing, not a meaningful baseline. `torch-grouped` (one batched matmul per KV
   head, no KV copy) is now the eager PyTorch baseline; SDPA is still reported.
 
+### Second kernel run (T4, grouped kernel and fair baseline)
+
+Decode attention, µs (GB/s). Triton 3.6, PyTorch 2.11:
+
+| Batch | Context | Split-K | Grouped | `torch-grouped` | `torch-sdpa` |
+|--:|--:|--:|--:|--:|--:|
+| 1 | 1,536 | 78 (41) | 101 (31) | 82 (38) | 674 (5) |
+| 1 | 8,192 | 255 (66) | 354 (47) | 323 (52) | 4,183 (4) |
+| 1 | 16,384 | 505 (66) | 664 (51) | 645 (52) | 8,292 (4) |
+| 8 | 1,536 | 375 (67) | 506 (50) | 280 (90) | 4,959 (5) |
+| 8 | 8,192 | 1,937 (69) | 2,430 (55) | 1,626 (83) | 32,831 (4) |
+
+* **The grouped kernel is slower than split-K**, so redundant KV reads were
+  not the main limit: L2 absorbs most of them. At batch 1 it launches only
+  4 KV heads x 8 splits = 32 programs for 40 SMs.
+* **Eager PyTorch with grouped matmuls beats every Triton kernel at batch 8**
+  (by about 20%) and loses to split-K at batch 1 from 4K context (1.2-1.3x).
+* **Everything sits at 20-28% of peak,** while the fused softmax reaches
+  230 GB/s (72%), so about 230 GB/s is attainable on this T4.
+* `torch-sdpa` stays at ~4 GB/s: the fallback path, as suspected.
+
+`bench.py` now sweeps splits, block size and warps for both kernels and
+checks whether `tl.dot` compiles to tensor-core `mma.sync` on Turing.
+
 The serving notebook has not run on a GPU yet. vLLM is pinned to 0.6.6.post1, the V0 engine, which
 supports Turing; if a flag fails on that version, the smoke-test cell shows it
 before the long runs.

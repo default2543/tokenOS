@@ -79,10 +79,61 @@ def decode_rows(device: str, batch: int) -> list[dict]:
     return rows
 
 
+# The first two runs left the grouped kernel slower than split-K and every
+# kernel near 20-27% of peak. Candidate causes, each tested here: too few
+# programs (grouped at batch 1 launches 4 KV heads x 8 splits = 32, under the
+# T4's 40 SMs), too few loads in flight per program, and tl.dot not lowering
+# to tensor-core mma on Turing.
+SWEEP_SPLITS = (4, 8, 16, 32, 64)
+SWEEP_BLOCK_N = (32, 64, 128)
+SWEEP_WARPS = (2, 4, 8)
+SWEEP_SHAPES = ((1, 1536), (1, 8192), (8, 1536), (8, 8192))
+
+
+def sweep_rows(device: str) -> dict:
+    kernels = {"triton-split": da.decode_attention_split,
+               "triton-grouped": da.decode_attention_grouped}
+    rows = []
+    for batch, context in SWEEP_SHAPES:
+        q = torch.randn(batch, Q_HEADS, HEAD_DIM, device=device, dtype=torch.float16)
+        k = torch.randn(batch, KV_HEADS, context, HEAD_DIM, device=device,
+                        dtype=torch.float16)
+        v = torch.randn_like(k)
+        expected = da.reference(q, k, v)
+        moved = da.kv_bytes(k, v)
+        for name, fn in kernels.items():
+            for splits in SWEEP_SPLITS:
+                for block_n in SWEEP_BLOCK_N:
+                    for warps in SWEEP_WARPS:
+                        run = lambda: fn(q, k, v, splits=splits, block_n=block_n,
+                                         num_warps=warps)
+                        try:
+                            torch.testing.assert_close(run(), expected,
+                                                       atol=2e-3, rtol=2e-2)
+                            ms = triton.testing.do_bench(run, warmup=10, rep=50,
+                                                         return_mode="median")
+                        except Exception as error:  # e.g. out of shared memory
+                            rows.append({"batch": batch, "context": context,
+                                         "impl": name, "splits": splits,
+                                         "block_n": block_n, "warps": warps,
+                                         "error": type(error).__name__})
+                            continue
+                        rows.append({"batch": batch, "context": context, "impl": name,
+                                     "splits": splits, "block_n": block_n,
+                                     "warps": warps, "us": round(ms * 1000, 2),
+                                     "gbps": round(moved / ms / 1e6, 1)})
+    q = torch.randn(1, Q_HEADS, HEAD_DIM, device=device, dtype=torch.float16)
+    k = torch.randn(1, KV_HEADS, 256, HEAD_DIM, device=device, dtype=torch.float16)
+    compiled = da._launch(q, k, k, splits=1, block_n=64, grouped=True)[3]
+    ptx = compiled.asm.get("ptx", "") if compiled is not None else ""
+    return {"configs": rows, "grouped_uses_mma": "mma.sync" in ptx}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--out", type=Path, default=Path("results/kernels.json"))
     parser.add_argument("--batches", default="1,8")
+    parser.add_argument("--no-sweep", action="store_true")
     args = parser.parse_args(argv)
     if not torch.cuda.is_available():
         raise SystemExit("needs a CUDA GPU (in Colab: Runtime > Change runtime type > T4)")
@@ -94,6 +145,8 @@ def main(argv: list[str] | None = None) -> int:
         "decode_attention": [row for b in args.batches.split(",")
                              for row in decode_rows("cuda", int(b))],
     }
+    if not args.no_sweep:
+        report["sweep"] = sweep_rows("cuda")
     args.out.parent.mkdir(parents=True, exist_ok=True)
     args.out.write_text(json.dumps(report, indent=2))
     print(f"{gpu}: peak {report['peak_gbps']} GB/s")
@@ -102,6 +155,22 @@ def main(argv: list[str] | None = None) -> int:
                  if report["peak_gbps"] else "")
         print(f"  b={row['batch']:<2} ctx={row['context']:<6} {row['impl']:<15} "
               f"{row['us']:>9} us  {row['gbps']:>6} GB/s{share}")
+    if "sweep" in report:
+        print(f"\nSweep (best of {len(SWEEP_SPLITS) * len(SWEEP_BLOCK_N) * len(SWEEP_WARPS)}"
+              f" configs each); grouped kernel uses mma.sync: "
+              f"{report['sweep']['grouped_uses_mma']}")
+        best = {}
+        for row in report["sweep"]["configs"]:
+            key = (row["batch"], row["context"], row["impl"])
+            if "us" in row and (key not in best or row["us"] < best[key]["us"]):
+                best[key] = row
+        for (batch, context, impl), row in sorted(best.items()):
+            print(f"  b={batch:<2} ctx={context:<6} {impl:<15} {row['us']:>9} us  "
+                  f"{row['gbps']:>6} GB/s  splits={row['splits']} "
+                  f"block_n={row['block_n']} warps={row['warps']}")
+        failed = sum("error" in row for row in report["sweep"]["configs"])
+        if failed:
+            print(f"  {failed} configs failed to compile or run; see the JSON")
     return 0
 
 

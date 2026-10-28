@@ -147,7 +147,9 @@ def _on_device(*tensors) -> bool:
     return all(t.is_cuda for t in tensors) or os.environ.get("TRITON_INTERPRET") == "1"
 
 
-def _launch(q, k, v, splits: int, block_n: int, grouped: bool = False):
+def _launch(q, k, v, splits: int, block_n: int, grouped: bool = False,
+            num_warps: int = 4):
+    """Returns (partial, m, l, compiled); `compiled` is None under the interpreter."""
     if not _on_device(q, k, v):
         raise ValueError("expected CUDA tensors")
     batch, q_heads, head_dim = q.shape
@@ -169,30 +171,36 @@ def _launch(q, k, v, splits: int, block_n: int, grouped: bool = False):
     )
     group = q_heads // kv_heads
     if grouped:
-        _grouped_decode_kernel[(batch * kv_heads, splits)](
+        compiled = _grouped_decode_kernel[(batch * kv_heads, splits)](
             *args, q_heads, kv_heads, group,
             HEAD_DIM=head_dim, BLOCK_N=block_n,
-            BLOCK_G=max(16, triton.next_power_of_2(group)), num_warps=4,
+            BLOCK_G=max(16, triton.next_power_of_2(group)), num_warps=num_warps,
         )
     else:
-        _decode_kernel[(batch * q_heads, splits)](
+        compiled = _decode_kernel[(batch * q_heads, splits)](
             *args, q_heads, group,
-            HEAD_DIM=head_dim, BLOCK_N=block_n, num_warps=4,
+            HEAD_DIM=head_dim, BLOCK_N=block_n, num_warps=num_warps,
         )
-    return partial, m, l
+    return partial, m, l, compiled
 
 
-def decode_attention(q, k, v, *, block_n: int = 64) -> torch.Tensor:
-    partial, _, l = _launch(q, k, v, splits=1, block_n=block_n)
+def decode_attention(q, k, v, *, block_n: int = 64, num_warps: int = 4) -> torch.Tensor:
+    partial, _, l, _ = _launch(q, k, v, splits=1, block_n=block_n, num_warps=num_warps)
     return (partial[:, :, 0] / l[:, :, :1]).to(q.dtype)
 
 
-def decode_attention_split(q, k, v, *, splits: int = 8, block_n: int = 64) -> torch.Tensor:
-    return _merge(*_launch(q, k, v, splits=splits, block_n=block_n), q.dtype)
+def decode_attention_split(q, k, v, *, splits: int = 8, block_n: int = 64,
+                           num_warps: int = 4) -> torch.Tensor:
+    partial, m, l, _ = _launch(q, k, v, splits=splits, block_n=block_n,
+                               num_warps=num_warps)
+    return _merge(partial, m, l, q.dtype)
 
 
-def decode_attention_grouped(q, k, v, *, splits: int = 8, block_n: int = 64) -> torch.Tensor:
-    return _merge(*_launch(q, k, v, splits=splits, block_n=block_n, grouped=True), q.dtype)
+def decode_attention_grouped(q, k, v, *, splits: int = 8, block_n: int = 64,
+                             num_warps: int = 4) -> torch.Tensor:
+    partial, m, l, _ = _launch(q, k, v, splits=splits, block_n=block_n,
+                               grouped=True, num_warps=num_warps)
+    return _merge(partial, m, l, q.dtype)
 
 
 def _merge(partial, m, l, dtype) -> torch.Tensor:
