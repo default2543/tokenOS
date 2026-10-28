@@ -8,7 +8,7 @@ FlashAttention-2). Nothing here spends API money.
 | Notebook | What it measures | Time |
 |---|---|---|
 | [`serving_bench.ipynb`](serving_bench.ipynb) | vLLM serving of Qwen2.5-Coder on recorded TokenOS prompts: prefix caching, n-gram speculative decoding, quantization, concurrency | ~1.5 h |
-| [`kernels.ipynb`](kernels.ipynb) | Hand-written Triton kernels: fused softmax, decode attention (single and split-K) vs PyTorch, as achieved memory bandwidth | ~10 min |
+| [`kernels.ipynb`](kernels.ipynb) | Hand-written Triton kernels: fused softmax, decode attention (single, split-K and GQA-grouped) vs PyTorch, as achieved memory bandwidth | ~3 min |
 
 Run each in its **own runtime**: installing vLLM replaces Colab's PyTorch.
 
@@ -62,11 +62,36 @@ correctness tests under Triton's CPU interpreter:
 ```bash
 docker run --rm -v "$PWD":/repo:ro -w /repo -e TRITON_INTERPRET=1 python:3.12-slim \
   sh -c "pip install -q torch --index-url https://download.pytorch.org/whl/cpu && \
-         pip install -q triton pytest && python -m pytest -q tests/test_colab_kernels.py"
+         pip install -q numpy triton pytest && python -m pytest -q tests/test_colab_kernels.py"
 ```
 
-Neither has run on a real GPU yet: no performance number exists until the
-notebooks are run. vLLM is pinned to 0.6.6.post1, the V0 engine, which
+### First kernel run (T4, before the grouped kernel)
+
+Decode attention, Qwen2.5-7B shapes, fp16, median of `do_bench`:
+
+| Batch | Context | Single-pass | Split-K (8) | Split-K speedup |
+|--:|--:|--:|--:|--:|
+| 1 | 1,536 | 132 µs (24 GB/s) | 78 µs (40 GB/s) | 1.7x |
+| 1 | 8,192 | 650 µs (26 GB/s) | 247 µs (68 GB/s) | 2.6x |
+| 1 | 16,384 | 1,283 µs (26 GB/s) | 473 µs (71 GB/s) | 2.7x |
+| 8 | 8,192 | 1,980 µs (68 GB/s) | 1,790 µs (75 GB/s) | 1.1x |
+
+Split-K helps exactly when batch × heads underfills the T4's 40 SMs. At the
+split-K kernel's speeds, attention for one output token across all 28 layers
+costs 2.2 ms at TokenOS's ~1.5K context and 6.9 ms at full history's ~8K.
+
+Two problems this run exposed, both addressed in the current code:
+
+* **Both kernels peak near 22% of bandwidth.** They run one program per
+  *query* head, so each KV block is read once per query head in its group
+  (7x for Qwen2.5-7B) while the bandwidth figure counts it once.
+  `decode_attention_grouped` runs one program per KV head and scores the
+  whole group with `tl.dot`.
+* **`torch-sdpa` measured ~4 GB/s**, an unfused fallback with `enable_gqa` on
+  Turing, not a meaningful baseline. `torch-grouped` (one batched matmul per KV
+  head, no KV copy) is now the eager PyTorch baseline; SDPA is still reported.
+
+The serving notebook has not run on a GPU yet. vLLM is pinned to 0.6.6.post1, the V0 engine, which
 supports Turing; if a flag fails on that version, the smoke-test cell shows it
 before the long runs.
 

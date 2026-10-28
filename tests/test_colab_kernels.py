@@ -37,3 +37,17 @@ def test_decode_attention_matches_reference(context: int, splits: int) -> None:
     # More splits than blocks leaves some splits empty; the merge must cope.
     torch.testing.assert_close(da.decode_attention_split(q, k, v, splits=splits),
                                expected, atol=2e-3, rtol=2e-2)
+    torch.testing.assert_close(da.decode_attention_grouped(q, k, v, splits=splits),
+                               expected, atol=2e-3, rtol=2e-2)
+    torch.testing.assert_close(da.torch_grouped(q, k, v), expected,
+                               atol=2e-3, rtol=2e-2)
+
+
+@pytest.mark.parametrize("q_heads,kv_heads", [(8, 8), (16, 2), (32, 1)])
+def test_grouped_decode_handles_group_sizes(q_heads: int, kv_heads: int) -> None:
+    """Group sizes 1, 8 and 32: padded below 16, exact at 16, larger than 16."""
+    q = torch.randn(1, q_heads, 64, device=DEVICE, dtype=torch.float16)
+    k = torch.randn(1, kv_heads, 300, 64, device=DEVICE, dtype=torch.float16)
+    v = torch.randn_like(k)
+    torch.testing.assert_close(da.decode_attention_grouped(q, k, v, splits=3),
+                               da.reference(q, k, v), atol=2e-3, rtol=2e-2)

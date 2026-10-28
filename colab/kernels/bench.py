@@ -26,7 +26,8 @@ Q_HEADS, KV_HEADS, HEAD_DIM, LAYERS = 28, 4, 128, 28
 # Context lengths around TokenOS's measured prompts: ~1.4K tokens for adaptive
 # at every attempt, ~8K for full history by attempt 10.
 CONTEXTS = (1024, 1536, 4096, 8192, 16384)
-PEAK_GBPS = {"Tesla T4": 320.0}
+PEAK_GBPS = {"Tesla T4": 320.0, "NVIDIA L4": 300.0,
+             "NVIDIA A100-SXM4-40GB": 1555.0, "NVIDIA A100-SXM4-80GB": 2039.0}
 
 
 def _ms(fn) -> float:
@@ -59,6 +60,8 @@ def decode_rows(device: str, batch: int) -> list[dict]:
         impls = {
             "triton": lambda: da.decode_attention(q, k, v),
             "triton-split": lambda: da.decode_attention_split(q, k, v, splits=8),
+            "triton-grouped": lambda: da.decode_attention_grouped(q, k, v, splits=8),
+            "torch-grouped": lambda: da.torch_grouped(q, k, v),
             "torch-sdpa": lambda: da.torch_sdpa(q, k, v),
         }
         for name, fn in impls.items():
@@ -95,8 +98,10 @@ def main(argv: list[str] | None = None) -> int:
     args.out.write_text(json.dumps(report, indent=2))
     print(f"{gpu}: peak {report['peak_gbps']} GB/s")
     for row in report["decode_attention"]:
-        print(f"  b={row['batch']:<2} ctx={row['context']:<6} {row['impl']:<13} "
-              f"{row['us']:>9} us  {row['gbps']:>6} GB/s")
+        share = (f"  {100 * row['gbps'] / report['peak_gbps']:5.1f}% of peak"
+                 if report["peak_gbps"] else "")
+        print(f"  b={row['batch']:<2} ctx={row['context']:<6} {row['impl']:<15} "
+              f"{row['us']:>9} us  {row['gbps']:>6} GB/s{share}")
     return 0
 
 
