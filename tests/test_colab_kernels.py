@@ -16,6 +16,7 @@ DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "colab" / "kernels"))
 import decode_attention as da  # noqa: E402
 from softmax import softmax  # noqa: E402
+import vllm_baseline  # noqa: E402
 
 
 @pytest.mark.parametrize("cols", [1, 7, 128, 1000, 4096])
@@ -66,3 +67,16 @@ def test_grouped_decode_handles_group_sizes(q_heads: int, kv_heads: int) -> None
     v = torch.randn_like(k)
     torch.testing.assert_close(da.decode_attention_grouped(q, k, v, splits=3),
                                da.reference(q, k, v), atol=2e-3, rtol=2e-2)
+
+
+def test_paged_layout_matches_vllm_indexing() -> None:
+    """Element (b, h, token, d) lands where vLLM's kernels read it."""
+    k = torch.randn(2, 3, 48, 32, dtype=torch.float16)
+    v = torch.randn_like(k)
+    key_cache, value_cache, tables = vllm_baseline.to_paged(k, v)
+    x = 16 // k.element_size()
+    for b, h, token, d in [(0, 0, 0, 0), (1, 2, 47, 31), (1, 1, 17, 9), (0, 2, 33, 20)]:
+        block = tables[b, token // vllm_baseline.BLOCK_SIZE]
+        slot = token % vllm_baseline.BLOCK_SIZE
+        assert key_cache[block, h, d // x, slot, d % x] == k[b, h, token, d]
+        assert value_cache[block, h, d, slot] == v[b, h, token, d]

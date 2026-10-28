@@ -20,6 +20,7 @@ import triton.testing
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import decode_attention as da  # noqa: E402
 from softmax import softmax  # noqa: E402
+import vllm_baseline  # noqa: E402
 
 # Qwen2.5-7B attention, the model served in serving_bench.py.
 Q_HEADS, KV_HEADS, HEAD_DIM, LAYERS = 28, 4, 128, 28
@@ -49,7 +50,7 @@ def softmax_rows(device: str) -> list[dict]:
     return rows
 
 
-def decode_rows(device: str, batch: int) -> list[dict]:
+def decode_rows(device: str, batch: int, with_vllm: bool = False) -> list[dict]:
     rows = []
     for context in CONTEXTS:
         q = torch.randn(batch, Q_HEADS, HEAD_DIM, device=device, dtype=torch.float16)
@@ -64,6 +65,8 @@ def decode_rows(device: str, batch: int) -> list[dict]:
             "torch-grouped": lambda: da.torch_grouped(q, k, v),
             "torch-sdpa": lambda: da.torch_sdpa(q, k, v),
         }
+        if with_vllm:
+            impls["vllm-paged"] = vllm_baseline.paged_decode(q, k, v)
         for name, fn in impls.items():
             torch.testing.assert_close(fn(), expected, atol=2e-3, rtol=2e-2)
         moved = da.kv_bytes(k, v)
@@ -131,6 +134,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--out", type=Path, default=Path("results/kernels.json"))
     parser.add_argument("--batches", default="1,8")
     parser.add_argument("--no-sweep", action="store_true")
+    parser.add_argument("--vllm", action="store_true",
+                        help="also time vLLM's PagedAttention decode (needs vLLM)")
     args = parser.parse_args(argv)
     if not torch.cuda.is_available():
         raise SystemExit("needs a CUDA GPU (in Colab: Runtime > Change runtime type > T4)")
@@ -140,7 +145,7 @@ def main(argv: list[str] | None = None) -> int:
         "torch": torch.__version__, "triton": triton.__version__,
         "softmax": softmax_rows("cuda"),
         "decode_attention": [row for b in args.batches.split(",")
-                             for row in decode_rows("cuda", int(b))],
+                             for row in decode_rows("cuda", int(b), args.vllm)],
     }
     if not args.no_sweep:
         report["sweep"] = sweep_rows("cuda")
