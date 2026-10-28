@@ -115,6 +115,35 @@ Decode attention, µs (GB/s). Triton 3.6, PyTorch 2.11:
 `bench.py` now sweeps splits, block size and warps for both kernels and
 checks whether `tl.dot` compiles to tensor-core `mma.sync` on Turing.
 
+### Third kernel run (T4, launch-parameter sweep)
+
+45 configurations per kernel and shape (splits 4-64, block 32-128 tokens,
+2-8 warps), each checked against the reference before timing. Best split-K
+configuration vs the defaults used above and vs `torch-grouped`, in µs:
+
+| Batch | Context | Default split-K | Tuned split-K (config) | GB/s, % of peak | `torch-grouped` | Tuned vs PyTorch |
+|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 1,536 | 78 | 66 (4 splits, 128, 2 warps) | 48, 15% | 81 | 1.23x |
+| 1 | 8,192 | 246 | 147 (32 splits, 128, 2 warps) | 114, 36% | 317 | 2.15x |
+| 8 | 1,536 | 356 | 198 (4 splits, 128, 2 warps) | 127, 40% | 266 | 1.34x |
+| 8 | 8,192 | 1,805 | 981 (4-8 splits, 128, 2 warps) | 137, 43% | 1,540 | 1.57x |
+
+* **Tuning reverses the PyTorch comparison.** The defaults (8 splits,
+  64-token blocks, 4 warps) lost to eager PyTorch at batch 8; tuned split-K
+  wins at every shape. Sweep timings use a shorter repetition window than
+  the main table, so the next run confirms them with the tuned defaults.
+* **Large blocks with few warps win everywhere.** Each thread then has more
+  independent loads in flight, which a memory-bound kernel on Turing needs:
+  the T4 has no asynchronous copies to pipeline loads in hardware.
+* **The grouped kernel is a dead end on this GPU.** `tl.dot` does not compile
+  to tensor-core `mma.sync` on Turing with Triton 3.6, every 128-token block
+  configuration ran out of shared memory, and its best time trails split-K
+  at every shape.
+
+`decode_attention_split` now defaults to 128-token blocks, 2 warps and about
+256 cached tokens per split (`default_splits`). The sweep now extends past the
+old grid's edge (256-token blocks, 1 warp) for split-K only.
+
 The serving notebook has not run on a GPU yet. vLLM is pinned to 0.6.6.post1, the V0 engine, which
 supports Turing; if a flag fails on that version, the smoke-test cell shows it
 before the long runs.

@@ -189,8 +189,21 @@ def decode_attention(q, k, v, *, block_n: int = 64, num_warps: int = 4) -> torch
     return (partial[:, :, 0] / l[:, :, :1]).to(q.dtype)
 
 
-def decode_attention_split(q, k, v, *, splits: int = 8, block_n: int = 64,
-                           num_warps: int = 4) -> torch.Tensor:
+def default_splits(batch: int, q_heads: int, context: int) -> int:
+    """~256 cached tokens per split, capped near 4,096 programs.
+
+    Fitted to the third T4 run's sweep: the best split counts left 256-384
+    tokens per program at batch 1, and at batch 8 more than about 16 splits
+    only added merge work.
+    """
+    return max(1, min(context // 256, 4096 // (batch * q_heads)))
+
+
+def decode_attention_split(q, k, v, *, splits: int | None = None, block_n: int = 128,
+                           num_warps: int = 2) -> torch.Tensor:
+    """Defaults are the T4 sweep's winners: large blocks, few warps."""
+    if splits is None:
+        splits = default_splits(q.shape[0], q.shape[1], k.shape[2])
     partial, m, l, _ = _launch(q, k, v, splits=splits, block_n=block_n,
                                num_warps=num_warps)
     return _merge(partial, m, l, q.dtype)

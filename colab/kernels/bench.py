@@ -59,7 +59,7 @@ def decode_rows(device: str, batch: int) -> list[dict]:
         expected = da.reference(q, k, v)
         impls = {
             "triton": lambda: da.decode_attention(q, k, v),
-            "triton-split": lambda: da.decode_attention_split(q, k, v, splits=8),
+            "triton-split": lambda: da.decode_attention_split(q, k, v),
             "triton-grouped": lambda: da.decode_attention_grouped(q, k, v, splits=8),
             "torch-grouped": lambda: da.torch_grouped(q, k, v),
             "torch-sdpa": lambda: da.torch_sdpa(q, k, v),
@@ -79,20 +79,17 @@ def decode_rows(device: str, batch: int) -> list[dict]:
     return rows
 
 
-# The first two runs left the grouped kernel slower than split-K and every
-# kernel near 20-27% of peak. Candidate causes, each tested here: too few
-# programs (grouped at batch 1 launches 4 KV heads x 8 splits = 32, under the
-# T4's 40 SMs), too few loads in flight per program, and tl.dot not lowering
-# to tensor-core mma on Turing.
-SWEEP_SPLITS = (4, 8, 16, 32, 64)
-SWEEP_BLOCK_N = (32, 64, 128)
-SWEEP_WARPS = (2, 4, 8)
+# The third run's sweep (splits 4-64, blocks 32-128, warps 2-8) found split-K
+# fastest with 128-token blocks and 2 warps, the edge of that grid, and found
+# tl.dot does not lower to mma.sync on Turing. This sweep extends past the edge.
+SWEEP_SPLITS = (4, 8, 16, 32)
+SWEEP_BLOCK_N = (64, 128, 256)
+SWEEP_WARPS = (1, 2, 4)
 SWEEP_SHAPES = ((1, 1536), (1, 8192), (8, 1536), (8, 8192))
 
 
 def sweep_rows(device: str) -> dict:
-    kernels = {"triton-split": da.decode_attention_split,
-               "triton-grouped": da.decode_attention_grouped}
+    kernels = {"triton-split": da.decode_attention_split}
     rows = []
     for batch, context in SWEEP_SHAPES:
         q = torch.randn(batch, Q_HEADS, HEAD_DIM, device=device, dtype=torch.float16)

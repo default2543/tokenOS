@@ -43,6 +43,21 @@ def test_decode_attention_matches_reference(context: int, splits: int) -> None:
                                atol=2e-3, rtol=2e-2)
 
 
+@pytest.mark.parametrize("context", [1, 255, 300, 4096])
+def test_split_defaults_match_reference(context: int) -> None:
+    q = torch.randn(1, 28, 128, device=DEVICE, dtype=torch.float16)
+    k = torch.randn(1, 4, context, 128, device=DEVICE, dtype=torch.float16)
+    v = torch.randn_like(k)
+    torch.testing.assert_close(da.decode_attention_split(q, k, v),
+                               da.reference(q, k, v), atol=2e-3, rtol=2e-2)
+
+
+def test_default_splits() -> None:
+    assert da.default_splits(1, 28, 100) == 1
+    assert da.default_splits(1, 28, 8192) == 32
+    assert da.default_splits(8, 28, 8192) == 18
+
+
 @pytest.mark.parametrize("q_heads,kv_heads", [(8, 8), (16, 2), (32, 1)])
 def test_grouped_decode_handles_group_sizes(q_heads: int, kv_heads: int) -> None:
     """Group sizes 1, 8 and 32: padded below 16, exact at 16, larger than 16."""
