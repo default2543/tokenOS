@@ -34,16 +34,18 @@ class BudgetManager:
         with self._condition:
             return self._reserved
 
-    def worst_case_cost(self, prompt: str) -> float:
+    def worst_case_cost(self, prompt: str, instructions: str | None = None) -> float:
         # UTF-8 bytes are a conservative upper bound for text token count.
-        input_tokens = len(prompt.encode("utf-8")) + structured_output_overhead_bytes()
+        input_tokens = len(prompt.encode("utf-8")) + structured_output_overhead_bytes(
+            instructions
+        )
         return (
             input_tokens * self.config.input_usd_per_mtok
             + self.config.max_output_tokens * self.config.output_usd_per_mtok
         ) / MTOK
 
-    def acquire(self, prompt: str) -> Reservation | None:
-        amount = self.worst_case_cost(prompt)
+    def acquire(self, prompt: str, instructions: str | None = None) -> Reservation | None:
+        amount = self.worst_case_cost(prompt, instructions)
         with self._condition:
             while self._committed + self._reserved + amount > self.config.budget_usd:
                 if self._reserved == 0:
