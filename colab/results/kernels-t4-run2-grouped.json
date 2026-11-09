@@ -1,0 +1,458 @@
+{
+  "gpu": "Tesla T4",
+  "peak_gbps": 320.0,
+  "torch": "2.11.0+cu130",
+  "triton": "3.6.0",
+  "softmax": [
+    {
+      "cols": 256,
+      "impl": "triton",
+      "ms": 0.0516,
+      "gbps": 81.2
+    },
+    {
+      "cols": 256,
+      "impl": "torch",
+      "ms": 0.0328,
+      "gbps": 128.0
+    },
+    {
+      "cols": 1024,
+      "impl": "triton",
+      "ms": 0.0758,
+      "gbps": 221.4
+    },
+    {
+      "cols": 1024,
+      "impl": "torch",
+      "ms": 0.0804,
+      "gbps": 208.7
+    },
+    {
+      "cols": 4096,
+      "impl": "triton",
+      "ms": 0.2918,
+      "gbps": 230.0
+    },
+    {
+      "cols": 4096,
+      "impl": "torch",
+      "ms": 0.41,
+      "gbps": 163.7
+    },
+    {
+      "cols": 16384,
+      "impl": "triton",
+      "ms": 1.1639,
+      "gbps": 230.6
+    },
+    {
+      "cols": 16384,
+      "impl": "torch",
+      "ms": 1.113,
+      "gbps": 241.2
+    }
+  ],
+  "decode_attention": [
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton",
+      "us": 89.95,
+      "gbps": 23.3,
+      "attention_ms_per_token_all_layers": 2.519
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton-split",
+      "us": 63.71,
+      "gbps": 32.9,
+      "attention_ms_per_token_all_layers": 1.784
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton-grouped",
+      "us": 81.57,
+      "gbps": 25.7,
+      "attention_ms_per_token_all_layers": 2.284
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "torch-grouped",
+      "us": 60.03,
+      "gbps": 34.9,
+      "attention_ms_per_token_all_layers": 1.681
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "torch-sdpa",
+      "us": 461.3,
+      "gbps": 4.5,
+      "attention_ms_per_token_all_layers": 12.916
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton",
+      "us": 132.69,
+      "gbps": 23.7,
+      "attention_ms_per_token_all_layers": 3.715
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton-split",
+      "us": 77.73,
+      "gbps": 40.5,
+      "attention_ms_per_token_all_layers": 2.176
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton-grouped",
+      "us": 101.09,
+      "gbps": 31.1,
+      "attention_ms_per_token_all_layers": 2.83
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "torch-grouped",
+      "us": 81.92,
+      "gbps": 38.4,
+      "attention_ms_per_token_all_layers": 2.294
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "torch-sdpa",
+      "us": 674.29,
+      "gbps": 4.7,
+      "attention_ms_per_token_all_layers": 18.88
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton",
+      "us": 332.38,
+      "gbps": 25.2,
+      "attention_ms_per_token_all_layers": 9.307
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton-split",
+      "us": 143.36,
+      "gbps": 58.5,
+      "attention_ms_per_token_all_layers": 4.014
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton-grouped",
+      "us": 197.76,
+      "gbps": 42.4,
+      "attention_ms_per_token_all_layers": 5.537
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "torch-grouped",
+      "us": 168.56,
+      "gbps": 49.8,
+      "attention_ms_per_token_all_layers": 4.72
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "torch-sdpa",
+      "us": 2065.82,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 57.843
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton",
+      "us": 650.54,
+      "gbps": 25.8,
+      "attention_ms_per_token_all_layers": 18.215
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton-split",
+      "us": 255.3,
+      "gbps": 65.7,
+      "attention_ms_per_token_all_layers": 7.148
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton-grouped",
+      "us": 354.3,
+      "gbps": 47.4,
+      "attention_ms_per_token_all_layers": 9.921
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "torch-grouped",
+      "us": 323.46,
+      "gbps": 51.9,
+      "attention_ms_per_token_all_layers": 9.057
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "torch-sdpa",
+      "us": 4182.66,
+      "gbps": 4.0,
+      "attention_ms_per_token_all_layers": 117.114
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton",
+      "us": 1284.74,
+      "gbps": 26.1,
+      "attention_ms_per_token_all_layers": 35.973
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton-split",
+      "us": 504.99,
+      "gbps": 66.4,
+      "attention_ms_per_token_all_layers": 14.14
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton-grouped",
+      "us": 663.55,
+      "gbps": 50.6,
+      "attention_ms_per_token_all_layers": 18.579
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "torch-grouped",
+      "us": 645.12,
+      "gbps": 52.0,
+      "attention_ms_per_token_all_layers": 18.063
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "torch-sdpa",
+      "us": 8292.16,
+      "gbps": 4.0,
+      "attention_ms_per_token_all_layers": 232.18
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton",
+      "us": 229.89,
+      "gbps": 73.0,
+      "attention_ms_per_token_all_layers": 6.437
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton-split",
+      "us": 264.16,
+      "gbps": 63.5,
+      "attention_ms_per_token_all_layers": 7.396
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton-grouped",
+      "us": 350.37,
+      "gbps": 47.9,
+      "attention_ms_per_token_all_layers": 9.81
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "torch-grouped",
+      "us": 190.88,
+      "gbps": 87.9,
+      "attention_ms_per_token_all_layers": 5.345
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "torch-sdpa",
+      "us": 3328.0,
+      "gbps": 5.0,
+      "attention_ms_per_token_all_layers": 93.184
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton",
+      "us": 354.24,
+      "gbps": 71.0,
+      "attention_ms_per_token_all_layers": 9.919
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton-split",
+      "us": 374.78,
+      "gbps": 67.1,
+      "attention_ms_per_token_all_layers": 10.494
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton-grouped",
+      "us": 506.0,
+      "gbps": 49.7,
+      "attention_ms_per_token_all_layers": 14.168
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "torch-grouped",
+      "us": 280.29,
+      "gbps": 89.8,
+      "attention_ms_per_token_all_layers": 7.848
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "torch-sdpa",
+      "us": 4958.56,
+      "gbps": 5.1,
+      "attention_ms_per_token_all_layers": 138.84
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton",
+      "us": 996.42,
+      "gbps": 67.4,
+      "attention_ms_per_token_all_layers": 27.9
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton-split",
+      "us": 946.67,
+      "gbps": 70.9,
+      "attention_ms_per_token_all_layers": 26.507
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton-grouped",
+      "us": 1220.0,
+      "gbps": 55.0,
+      "attention_ms_per_token_all_layers": 34.16
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "torch-grouped",
+      "us": 782.38,
+      "gbps": 85.8,
+      "attention_ms_per_token_all_layers": 21.907
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "torch-sdpa",
+      "us": 15974.4,
+      "gbps": 4.2,
+      "attention_ms_per_token_all_layers": 447.283
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton",
+      "us": 2145.54,
+      "gbps": 62.6,
+      "attention_ms_per_token_all_layers": 60.075
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton-split",
+      "us": 1937.47,
+      "gbps": 69.3,
+      "attention_ms_per_token_all_layers": 54.249
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton-grouped",
+      "us": 2429.63,
+      "gbps": 55.2,
+      "attention_ms_per_token_all_layers": 68.03
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "torch-grouped",
+      "us": 1626.11,
+      "gbps": 82.5,
+      "attention_ms_per_token_all_layers": 45.531
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "torch-sdpa",
+      "us": 32831.49,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 919.282
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton",
+      "us": 4736.22,
+      "gbps": 56.7,
+      "attention_ms_per_token_all_layers": 132.614
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton-split",
+      "us": 4019.58,
+      "gbps": 66.8,
+      "attention_ms_per_token_all_layers": 112.548
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton-grouped",
+      "us": 4781.06,
+      "gbps": 56.1,
+      "attention_ms_per_token_all_layers": 133.87
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "torch-grouped",
+      "us": 3445.54,
+      "gbps": 77.9,
+      "attention_ms_per_token_all_layers": 96.475
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "torch-sdpa",
+      "us": 65488.9,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 1833.689
+    }
+  ]
+}

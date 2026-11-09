@@ -67,6 +67,9 @@ docker run --rm -v "$PWD":/repo:ro -w /repo -e TRITON_INTERPRET=1 python:3.12-sl
          pip install -q numpy triton pytest && python -m pytest -q tests/test_colab_kernels.py"
 ```
 
+Raw results for every run are in [`results/`](results/) (`kernels-t4-run1.json` to
+`kernels-t4-run4-vllm.json`).
+
 ### First kernel run (T4, before the grouped kernel)
 
 Decode attention, Qwen2.5-7B shapes, fp16, median of `do_bench`:

@@ -1,0 +1,4003 @@
+{
+  "gpu": "Tesla T4",
+  "peak_gbps": 320.0,
+  "torch": "2.11.0+cu130",
+  "triton": "3.6.0",
+  "softmax": [
+    {
+      "cols": 256,
+      "impl": "triton",
+      "ms": 0.0523,
+      "gbps": 80.2
+    },
+    {
+      "cols": 256,
+      "impl": "torch",
+      "ms": 0.0328,
+      "gbps": 128.0
+    },
+    {
+      "cols": 1024,
+      "impl": "triton",
+      "ms": 0.0758,
+      "gbps": 221.4
+    },
+    {
+      "cols": 1024,
+      "impl": "torch",
+      "ms": 0.0806,
+      "gbps": 208.2
+    },
+    {
+      "cols": 4096,
+      "impl": "triton",
+      "ms": 0.2926,
+      "gbps": 229.4
+    },
+    {
+      "cols": 4096,
+      "impl": "torch",
+      "ms": 0.3838,
+      "gbps": 174.9
+    },
+    {
+      "cols": 16384,
+      "impl": "triton",
+      "ms": 1.1692,
+      "gbps": 229.6
+    },
+    {
+      "cols": 16384,
+      "impl": "torch",
+      "ms": 1.1142,
+      "gbps": 240.9
+    }
+  ],
+  "decode_attention": [
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton",
+      "us": 90.11,
+      "gbps": 23.3,
+      "attention_ms_per_token_all_layers": 2.523
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton-split",
+      "us": 63.81,
+      "gbps": 32.9,
+      "attention_ms_per_token_all_layers": 1.787
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "triton-grouped",
+      "us": 81.63,
+      "gbps": 25.7,
+      "attention_ms_per_token_all_layers": 2.286
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "torch-grouped",
+      "us": 60.38,
+      "gbps": 34.7,
+      "attention_ms_per_token_all_layers": 1.691
+    },
+    {
+      "batch": 1,
+      "context": 1024,
+      "impl": "torch-sdpa",
+      "us": 460.34,
+      "gbps": 4.6,
+      "attention_ms_per_token_all_layers": 12.889
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton",
+      "us": 131.42,
+      "gbps": 23.9,
+      "attention_ms_per_token_all_layers": 3.68
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton-split",
+      "us": 77.82,
+      "gbps": 40.4,
+      "attention_ms_per_token_all_layers": 2.179
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "triton-grouped",
+      "us": 100.86,
+      "gbps": 31.2,
+      "attention_ms_per_token_all_layers": 2.824
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "torch-grouped",
+      "us": 81.3,
+      "gbps": 38.7,
+      "attention_ms_per_token_all_layers": 2.276
+    },
+    {
+      "batch": 1,
+      "context": 1536,
+      "impl": "torch-sdpa",
+      "us": 672.96,
+      "gbps": 4.7,
+      "attention_ms_per_token_all_layers": 18.843
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton",
+      "us": 329.73,
+      "gbps": 25.4,
+      "attention_ms_per_token_all_layers": 9.232
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton-split",
+      "us": 143.1,
+      "gbps": 58.6,
+      "attention_ms_per_token_all_layers": 4.007
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "triton-grouped",
+      "us": 197.07,
+      "gbps": 42.6,
+      "attention_ms_per_token_all_layers": 5.518
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "torch-grouped",
+      "us": 168.45,
+      "gbps": 49.8,
+      "attention_ms_per_token_all_layers": 4.717
+    },
+    {
+      "batch": 1,
+      "context": 4096,
+      "impl": "torch-sdpa",
+      "us": 2070.53,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 57.975
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton",
+      "us": 647.62,
+      "gbps": 25.9,
+      "attention_ms_per_token_all_layers": 18.133
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton-split",
+      "us": 245.57,
+      "gbps": 68.3,
+      "attention_ms_per_token_all_layers": 6.876
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "triton-grouped",
+      "us": 350.21,
+      "gbps": 47.9,
+      "attention_ms_per_token_all_layers": 9.806
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "torch-grouped",
+      "us": 317.34,
+      "gbps": 52.9,
+      "attention_ms_per_token_all_layers": 8.886
+    },
+    {
+      "batch": 1,
+      "context": 8192,
+      "impl": "torch-sdpa",
+      "us": 4196.16,
+      "gbps": 4.0,
+      "attention_ms_per_token_all_layers": 117.492
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton",
+      "us": 1283.6,
+      "gbps": 26.1,
+      "attention_ms_per_token_all_layers": 35.941
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton-split",
+      "us": 470.77,
+      "gbps": 71.3,
+      "attention_ms_per_token_all_layers": 13.182
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "triton-grouped",
+      "us": 660.06,
+      "gbps": 50.8,
+      "attention_ms_per_token_all_layers": 18.482
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "torch-grouped",
+      "us": 614.4,
+      "gbps": 54.6,
+      "attention_ms_per_token_all_layers": 17.203
+    },
+    {
+      "batch": 1,
+      "context": 16384,
+      "impl": "torch-sdpa",
+      "us": 8321.02,
+      "gbps": 4.0,
+      "attention_ms_per_token_all_layers": 232.989
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton",
+      "us": 223.1,
+      "gbps": 75.2,
+      "attention_ms_per_token_all_layers": 6.247
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton-split",
+      "us": 249.86,
+      "gbps": 67.1,
+      "attention_ms_per_token_all_layers": 6.996
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "triton-grouped",
+      "us": 346.05,
+      "gbps": 48.5,
+      "attention_ms_per_token_all_layers": 9.689
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "torch-grouped",
+      "us": 185.04,
+      "gbps": 90.7,
+      "attention_ms_per_token_all_layers": 5.181
+    },
+    {
+      "batch": 8,
+      "context": 1024,
+      "impl": "torch-sdpa",
+      "us": 3338.69,
+      "gbps": 5.0,
+      "attention_ms_per_token_all_layers": 93.483
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton",
+      "us": 335.42,
+      "gbps": 75.0,
+      "attention_ms_per_token_all_layers": 9.392
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton-split",
+      "us": 356.35,
+      "gbps": 70.6,
+      "attention_ms_per_token_all_layers": 9.978
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "triton-grouped",
+      "us": 501.57,
+      "gbps": 50.2,
+      "attention_ms_per_token_all_layers": 14.044
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "torch-grouped",
+      "us": 266.3,
+      "gbps": 94.5,
+      "attention_ms_per_token_all_layers": 7.457
+    },
+    {
+      "batch": 8,
+      "context": 1536,
+      "impl": "torch-sdpa",
+      "us": 4974.61,
+      "gbps": 5.1,
+      "attention_ms_per_token_all_layers": 139.289
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton",
+      "us": 936.98,
+      "gbps": 71.6,
+      "attention_ms_per_token_all_layers": 26.235
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton-split",
+      "us": 889.26,
+      "gbps": 75.5,
+      "attention_ms_per_token_all_layers": 24.899
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "triton-grouped",
+      "us": 1184.29,
+      "gbps": 56.7,
+      "attention_ms_per_token_all_layers": 33.16
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "torch-grouped",
+      "us": 728.42,
+      "gbps": 92.1,
+      "attention_ms_per_token_all_layers": 20.396
+    },
+    {
+      "batch": 8,
+      "context": 4096,
+      "impl": "torch-sdpa",
+      "us": 16051.94,
+      "gbps": 4.2,
+      "attention_ms_per_token_all_layers": 449.454
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton",
+      "us": 2015.23,
+      "gbps": 66.6,
+      "attention_ms_per_token_all_layers": 56.426
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton-split",
+      "us": 1804.61,
+      "gbps": 74.4,
+      "attention_ms_per_token_all_layers": 50.529
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "triton-grouped",
+      "us": 2279.26,
+      "gbps": 58.9,
+      "attention_ms_per_token_all_layers": 63.819
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "torch-grouped",
+      "us": 1540.35,
+      "gbps": 87.1,
+      "attention_ms_per_token_all_layers": 43.13
+    },
+    {
+      "batch": 8,
+      "context": 8192,
+      "impl": "torch-sdpa",
+      "us": 32985.09,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 923.582
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton",
+      "us": 4458.82,
+      "gbps": 60.2,
+      "attention_ms_per_token_all_layers": 124.847
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton-split",
+      "us": 3787.46,
+      "gbps": 70.9,
+      "attention_ms_per_token_all_layers": 106.049
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "triton-grouped",
+      "us": 4524.1,
+      "gbps": 59.3,
+      "attention_ms_per_token_all_layers": 126.675
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "torch-grouped",
+      "us": 3240.45,
+      "gbps": 82.8,
+      "attention_ms_per_token_all_layers": 90.733
+    },
+    {
+      "batch": 8,
+      "context": 16384,
+      "impl": "torch-sdpa",
+      "us": 65736.06,
+      "gbps": 4.1,
+      "attention_ms_per_token_all_layers": 1840.61
+    }
+  ],
+  "sweep": {
+    "configs": [
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 95.17,
+        "gbps": 33.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 108.16,
+        "gbps": 29.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 159.3,
+        "gbps": 19.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 91.87,
+        "gbps": 34.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 84.99,
+        "gbps": 37.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 105.84,
+        "gbps": 29.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "us": 66.02,
+        "gbps": 47.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "us": 76.98,
+        "gbps": 40.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "us": 81.23,
+        "gbps": 38.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 73.63,
+        "gbps": 42.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 104.32,
+        "gbps": 30.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 158.06,
+        "gbps": 19.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 71.33,
+        "gbps": 44.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 77.78,
+        "gbps": 40.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 106.5,
+        "gbps": 29.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "us": 69.54,
+        "gbps": 45.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "us": 82.99,
+        "gbps": 37.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "us": 91.62,
+        "gbps": 34.3
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 66.88,
+        "gbps": 47.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 104.11,
+        "gbps": 30.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 159.09,
+        "gbps": 19.8
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 75.78,
+        "gbps": 41.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 88.85,
+        "gbps": 35.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 124.93,
+        "gbps": 25.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "us": 68.29,
+        "gbps": 46.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "us": 80.88,
+        "gbps": 38.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "us": 91.98,
+        "gbps": 34.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 75.9,
+        "gbps": 41.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 123.65,
+        "gbps": 25.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 194.02,
+        "gbps": 16.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 73.73,
+        "gbps": 42.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 93.86,
+        "gbps": 33.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 125.6,
+        "gbps": 25.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "us": 78.98,
+        "gbps": 39.8
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "us": 102.62,
+        "gbps": 30.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "us": 134.27,
+        "gbps": 23.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 77.82,
+        "gbps": 40.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 125.57,
+        "gbps": 25.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 194.75,
+        "gbps": 16.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 86.02,
+        "gbps": 36.6
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 131.01,
+        "gbps": 24.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 203.55,
+        "gbps": 15.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "us": 120.83,
+        "gbps": 26.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "us": 149.5,
+        "gbps": 21.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "us": 306.91,
+        "gbps": 10.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 340.0,
+        "gbps": 9.3
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 325.63,
+        "gbps": 9.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 335.87,
+        "gbps": 9.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 422.66,
+        "gbps": 7.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 280.19,
+        "gbps": 11.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 336.35,
+        "gbps": 9.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 255.49,
+        "gbps": 12.3
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 293.79,
+        "gbps": 10.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 309.25,
+        "gbps": 10.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 209.34,
+        "gbps": 15.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 110.59,
+        "gbps": 28.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 145.15,
+        "gbps": 21.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 112.64,
+        "gbps": 27.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 118.78,
+        "gbps": 26.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 126.98,
+        "gbps": 24.8
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 247.81,
+        "gbps": 12.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 134.5,
+        "gbps": 23.4
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 169.98,
+        "gbps": 18.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 135.62,
+        "gbps": 23.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 145.41,
+        "gbps": 21.6
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 157.34,
+        "gbps": 20.0
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 280.7,
+        "gbps": 11.2
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 138.32,
+        "gbps": 22.7
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 174.18,
+        "gbps": 18.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 420.29,
+        "gbps": 7.5
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 212.9,
+        "gbps": 14.8
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 282.61,
+        "gbps": 11.1
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1341.44,
+        "gbps": 2.3
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 534.5,
+        "gbps": 5.9
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 460.77,
+        "gbps": 6.8
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 668.35,
+        "gbps": 25.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 987.14,
+        "gbps": 17.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 1714.34,
+        "gbps": 9.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 584.7,
+        "gbps": 28.7
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 309.62,
+        "gbps": 54.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 416.38,
+        "gbps": 40.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "us": 183.2,
+        "gbps": 91.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "us": 230.58,
+        "gbps": 72.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "us": 258.11,
+        "gbps": 65.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 212.99,
+        "gbps": 78.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 398.19,
+        "gbps": 42.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 693.31,
+        "gbps": 24.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 192.7,
+        "gbps": 87.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 248.29,
+        "gbps": 67.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 404.05,
+        "gbps": 41.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "us": 176.8,
+        "gbps": 94.9
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "us": 233.47,
+        "gbps": 71.9
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "us": 262.14,
+        "gbps": 64.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 183.01,
+        "gbps": 91.7
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 391.01,
+        "gbps": 42.9
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 667.23,
+        "gbps": 25.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 196.58,
+        "gbps": 85.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 246.62,
+        "gbps": 68.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 399.68,
+        "gbps": 42.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "us": 154.85,
+        "gbps": 108.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "us": 208.29,
+        "gbps": 80.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "us": 262.59,
+        "gbps": 63.9
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 184.1,
+        "gbps": 91.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 380.93,
+        "gbps": 44.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 662.88,
+        "gbps": 25.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 174.08,
+        "gbps": 96.4
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 241.47,
+        "gbps": 69.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 390.05,
+        "gbps": 43.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "us": 147.38,
+        "gbps": 113.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "us": 216.27,
+        "gbps": 77.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "us": 264.19,
+        "gbps": 63.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 184.35,
+        "gbps": 91.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 385.02,
+        "gbps": 43.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 658.75,
+        "gbps": 25.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 169.09,
+        "gbps": 99.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 258.05,
+        "gbps": 65.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 387.01,
+        "gbps": 43.4
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "us": 149.5,
+        "gbps": 112.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "us": 227.44,
+        "gbps": 73.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "us": 268.86,
+        "gbps": 62.4
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 702.5,
+        "gbps": 23.9
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 557.5,
+        "gbps": 30.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 575.14,
+        "gbps": 29.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 810.27,
+        "gbps": 20.7
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 478.83,
+        "gbps": 35.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 583.39,
+        "gbps": 28.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 401.66,
+        "gbps": 41.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 462.82,
+        "gbps": 36.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 500.02,
+        "gbps": 33.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 791.78,
+        "gbps": 21.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 353.28,
+        "gbps": 47.5
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 514.05,
+        "gbps": 32.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 355.81,
+        "gbps": 47.2
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 457.06,
+        "gbps": 36.7
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 499.71,
+        "gbps": 33.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 815.17,
+        "gbps": 20.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 374.56,
+        "gbps": 44.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 527.46,
+        "gbps": 31.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 352.1,
+        "gbps": 47.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 415.2,
+        "gbps": 40.4
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 502.19,
+        "gbps": 33.4
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 927.34,
+        "gbps": 18.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 378.9,
+        "gbps": 44.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 528.61,
+        "gbps": 31.7
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 342.05,
+        "gbps": 49.0
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 407.92,
+        "gbps": 41.1
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 450.3,
+        "gbps": 37.3
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 903.17,
+        "gbps": 18.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 350.88,
+        "gbps": 47.8
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 484.64,
+        "gbps": 34.6
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 1,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 259.46,
+        "gbps": 97.0
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 568.29,
+        "gbps": 44.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 981.89,
+        "gbps": 25.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 233.52,
+        "gbps": 107.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 356.35,
+        "gbps": 70.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 582.53,
+        "gbps": 43.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "us": 198.02,
+        "gbps": 127.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "us": 300.21,
+        "gbps": 83.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "us": 384.32,
+        "gbps": 65.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 256.22,
+        "gbps": 98.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 568.58,
+        "gbps": 44.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 984.19,
+        "gbps": 25.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 226.42,
+        "gbps": 111.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 366.4,
+        "gbps": 68.7
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 570.3,
+        "gbps": 44.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "us": 219.44,
+        "gbps": 114.7
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "us": 360.54,
+        "gbps": 69.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "us": 456.77,
+        "gbps": 55.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 274.43,
+        "gbps": 91.7
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 577.54,
+        "gbps": 43.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 1001.89,
+        "gbps": 25.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 260.83,
+        "gbps": 96.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 450.66,
+        "gbps": 55.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 750.3,
+        "gbps": 33.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "us": 234.21,
+        "gbps": 107.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "us": 372.64,
+        "gbps": 67.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "us": 476.06,
+        "gbps": 52.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 360.45,
+        "gbps": 69.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 789.12,
+        "gbps": 31.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 1333.25,
+        "gbps": 18.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 304.13,
+        "gbps": 82.7
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 491.31,
+        "gbps": 51.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 803.46,
+        "gbps": 31.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "us": 383.76,
+        "gbps": 65.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "us": 594.56,
+        "gbps": 42.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "us": 880.51,
+        "gbps": 28.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 442.37,
+        "gbps": 56.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 871.87,
+        "gbps": 28.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 1438.43,
+        "gbps": 17.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 534.43,
+        "gbps": 47.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 967.3,
+        "gbps": 26.0
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 1537.87,
+        "gbps": 16.4
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "us": 831.46,
+        "gbps": 30.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1118.93,
+        "gbps": 22.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "us": 1677.31,
+        "gbps": 15.0
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 518.14,
+        "gbps": 48.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 607.15,
+        "gbps": 41.4
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 733.26,
+        "gbps": 34.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1368.06,
+        "gbps": 18.4
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 536.58,
+        "gbps": 46.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 766.96,
+        "gbps": 32.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 481.65,
+        "gbps": 52.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 596.21,
+        "gbps": 42.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 654.34,
+        "gbps": 38.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1307.74,
+        "gbps": 19.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 491.52,
+        "gbps": 51.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 695.14,
+        "gbps": 36.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 486.11,
+        "gbps": 51.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 568.74,
+        "gbps": 44.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 624.11,
+        "gbps": 40.3
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1704.48,
+        "gbps": 14.8
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 611.62,
+        "gbps": 41.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 871.84,
+        "gbps": 28.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 637.74,
+        "gbps": 39.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 765.7,
+        "gbps": 32.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 855.94,
+        "gbps": 29.4
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1811.7,
+        "gbps": 13.9
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 643.2,
+        "gbps": 39.1
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 912.77,
+        "gbps": 27.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 3057.66,
+        "gbps": 8.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 840.22,
+        "gbps": 30.0
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 946.18,
+        "gbps": 26.6
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 7882.75,
+        "gbps": 3.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 1859.87,
+        "gbps": 13.5
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 1905.07,
+        "gbps": 13.2
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 1536,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 1564.77,
+        "gbps": 85.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3112.26,
+        "gbps": 43.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 5188.96,
+        "gbps": 25.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1228.32,
+        "gbps": 109.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 1976.64,
+        "gbps": 67.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3093.66,
+        "gbps": 43.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "us": 981.15,
+        "gbps": 136.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1626.11,
+        "gbps": 82.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "us": 2019.33,
+        "gbps": 66.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 1350.94,
+        "gbps": 99.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3008.51,
+        "gbps": 44.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 5114.46,
+        "gbps": 26.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1129.9,
+        "gbps": 118.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 1942.43,
+        "gbps": 69.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3042.56,
+        "gbps": 44.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "us": 980.99,
+        "gbps": 136.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1660.93,
+        "gbps": 80.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "us": 2022.62,
+        "gbps": 66.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 1454.98,
+        "gbps": 92.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3108.4,
+        "gbps": 43.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 5152.51,
+        "gbps": 26.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1189.89,
+        "gbps": 112.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 1952.54,
+        "gbps": 68.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3042.78,
+        "gbps": 44.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "us": 997.44,
+        "gbps": 134.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1653.79,
+        "gbps": 81.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "us": 2134.72,
+        "gbps": 62.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 1421.28,
+        "gbps": 94.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3163.66,
+        "gbps": 42.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 5181.44,
+        "gbps": 25.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1209.89,
+        "gbps": 110.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2042.72,
+        "gbps": 65.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3156.0,
+        "gbps": 42.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "us": 1038.21,
+        "gbps": 129.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1703.12,
+        "gbps": 78.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "us": 2242.69,
+        "gbps": 59.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 1548.61,
+        "gbps": 86.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3219.49,
+        "gbps": 41.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 5267.07,
+        "gbps": 25.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 1337.71,
+        "gbps": 100.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2279.49,
+        "gbps": 58.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3217.41,
+        "gbps": 41.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "us": 1118.66,
+        "gbps": 120.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "us": 1995.2,
+        "gbps": 67.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-split",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "us": 2168.83,
+        "gbps": 61.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 2,
+        "us": 2608.54,
+        "gbps": 51.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 4,
+        "us": 3106.56,
+        "gbps": 43.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 32,
+        "warps": 8,
+        "us": 3756.91,
+        "gbps": 35.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 2,
+        "us": 6959.44,
+        "gbps": 19.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2588.29,
+        "gbps": 51.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3935.26,
+        "gbps": 34.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 4,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 2,
+        "us": 2398.02,
+        "gbps": 56.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 4,
+        "us": 2999.74,
+        "gbps": 44.7
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 32,
+        "warps": 8,
+        "us": 3303.42,
+        "gbps": 40.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 2,
+        "us": 6631.52,
+        "gbps": 20.2
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2415.92,
+        "gbps": 55.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3497.98,
+        "gbps": 38.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 8,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 2,
+        "us": 2405.76,
+        "gbps": 55.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 4,
+        "us": 2835.26,
+        "gbps": 47.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 32,
+        "warps": 8,
+        "us": 3088.38,
+        "gbps": 43.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 2,
+        "us": 6561.79,
+        "gbps": 20.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2341.55,
+        "gbps": 57.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3356.78,
+        "gbps": 40.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 16,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 2,
+        "us": 2363.9,
+        "gbps": 56.8
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 4,
+        "us": 2852.86,
+        "gbps": 47.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 32,
+        "warps": 8,
+        "us": 3124.03,
+        "gbps": 43.0
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 2,
+        "us": 6692.13,
+        "gbps": 20.1
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2371.58,
+        "gbps": 56.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3399.01,
+        "gbps": 39.5
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 32,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 2,
+        "us": 2467.12,
+        "gbps": 54.4
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 4,
+        "us": 2924.54,
+        "gbps": 45.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 32,
+        "warps": 8,
+        "us": 3202.69,
+        "gbps": 41.9
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 2,
+        "us": 6966.27,
+        "gbps": 19.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 4,
+        "us": 2501.98,
+        "gbps": 53.6
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 64,
+        "warps": 8,
+        "us": 3505.57,
+        "gbps": 38.3
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 2,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 4,
+        "error": "OutOfResources"
+      },
+      {
+        "batch": 8,
+        "context": 8192,
+        "impl": "triton-grouped",
+        "splits": 64,
+        "block_n": 128,
+        "warps": 8,
+        "error": "OutOfResources"
+      }
+    ],
+    "grouped_uses_mma": false
+  }
+}
