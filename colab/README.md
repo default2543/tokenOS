@@ -10,7 +10,9 @@ FlashAttention-2). Nothing here spends API money.
 | [`serving_bench.ipynb`](serving_bench.ipynb) | vLLM serving of Qwen2.5-Coder on recorded TokenOS prompts: prefix caching, n-gram speculative decoding, quantization, concurrency | ~1.5 h |
 | [`kernels.ipynb`](kernels.ipynb) | Hand-written Triton kernels: fused softmax, decode attention (single, split-K and GQA-grouped) vs PyTorch, as achieved memory bandwidth | ~3 min |
 
-Run each in its **own runtime**: installing vLLM replaces Colab's PyTorch.
+The serving notebook installs vLLM 0.6.6 into a separate Python 3.12
+environment (`/content/vllm-env`), because Colab's Python is 3.13 and that
+vLLM supports up to 3.12; Colab's own PyTorch and Triton are left alone.
 
 ## The workload
 
