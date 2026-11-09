@@ -68,7 +68,7 @@ docker run --rm -v "$PWD":/repo:ro -w /repo -e TRITON_INTERPRET=1 python:3.12-sl
 ```
 
 Raw results for every run are in [`results/`](results/) (`kernels-t4-run1.json` to
-`kernels-t4-run4-vllm.json`).
+`kernels-t4-run5-vllm-confirm.json`).
 
 ### First kernel run (T4, before the grouped kernel)
 
@@ -180,8 +180,36 @@ Eager timings, µs; bandwidth is the grouped kernel's:
 * Split-K is now slower than vLLM at every shape (e.g. 190 vs 115 µs at
   batch 1, 8K), and its tuned defaults came from Triton 3.6; the sweep under
   3.1 preferred 64-token blocks and 1 warp.
-* **CUDA-graph timing failed to capture** for every implementation in this
-  environment, so only eager timings exist; the cause is not yet known.
+* CUDA-graph timing failed in this run (Triton's `do_bench_cudagraph`); see
+  the fifth run.
+
+### Fifth kernel run (T4, same environment: confirmation and CUDA graphs)
+
+A repeat of the fourth run, with CUDA-graph timing replaced by an explicit
+`torch.cuda.CUDAGraph` capture that flushes L2 before each call and subtracts
+the flush. Grouped kernel vs vLLM's PagedAttention:
+
+| Batch | Context | Grouped, graph µs | vLLM, graph µs | vs vLLM, graph | vs vLLM, eager (run 4 / run 5) | Grouped bandwidth, graph |
+|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 1,024 | 15.4 | 28.1 | 1.82x | 1.67x / 1.68x | 136 GB/s, 43% |
+| 1 | 1,536 | 19.3 | 29.3 | 1.52x | 1.46x / 1.45x | 163 GB/s, 51% |
+| 1 | 4,096 | 42.1 | 70.3 | 1.67x | 1.44x / 1.43x | 199 GB/s, 62% |
+| 1 | 8,192 | 74.5 | 140.1 | 1.88x | 1.42x / 1.40x | 225 GB/s, 70% |
+| 1 | 16,384 | 139.0 | 290.1 | 2.09x | 1.54x / 1.54x | 241 GB/s, 75% |
+| 8 | 1,024 | 83.5 | 143.5 | 1.72x | 1.29x / 1.31x | 201 GB/s, 63% |
+| 8 | 1,536 | 117.8 | 224.4 | 1.91x | 1.41x / 1.46x | 214 GB/s, 67% |
+| 8 | 4,096 | 286.1 | 597.5 | 2.09x | 1.56x / 1.68x | 235 GB/s, 73% |
+| 8 | 8,192 | 560.1 | 1,320.9 | 2.36x | 1.73x / 1.99x | 240 GB/s, 75% |
+| 8 | 16,384 | 1,126.7 | 3,098.7 | 2.75x | 1.91x / 2.54x | 238 GB/s, 74% |
+
+* **The eager result reproduces.** At batch 1 the two runs agree within 2%;
+  the grouped kernel's own times agree within 2% everywhere. vLLM's batch-8
+  eager times rose 7-36% between runs, so the batch-8 margins are a range.
+* **vLLM is slower under CUDA graphs than eager** at most shapes, while every
+  Triton kernel is as fast or faster. The cause is not established (its v2
+  kernel allocates temporaries per call; T4 clocks also vary under load), so
+  the conservative claim is the eager one: **1.3-1.9x faster than vLLM's
+  PagedAttention**, reaching up to 79% of peak bandwidth.
 
 The serving notebook has not run on a GPU yet. vLLM is pinned to 0.6.6.post1, the V0 engine, which
 supports Turing; if a flag fails on that version, the smoke-test cell shows it
