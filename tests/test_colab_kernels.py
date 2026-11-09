@@ -80,3 +80,21 @@ def test_paged_layout_matches_vllm_indexing() -> None:
         slot = token % vllm_baseline.BLOCK_SIZE
         assert key_cache[block, h, d // x, slot, d % x] == k[b, h, token, d]
         assert value_cache[block, h, d, slot] == v[b, h, token, d]
+
+
+def test_grouped_splits_fill_the_gpu() -> None:
+    assert da.grouped_splits(1, 4, 8192, 108) == 54  # ~2 programs per A100 SM
+    assert da.grouped_splits(1, 4, 8192, 40) == 20
+    assert da.grouped_splits(8, 4, 8192, 108) == 7
+    assert da.grouped_splits(1, 4, 300, 108) == 2  # >= 128 tokens per split
+    assert da.grouped_splits(1, 4, 100, 108) == 1
+
+
+@pytest.mark.parametrize("stages", [None, 2, 4])
+def test_grouped_auto_splits_and_stages_match_reference(stages) -> None:
+    q = torch.randn(1, 28, 128, device=DEVICE, dtype=torch.float16)
+    k = torch.randn(1, 4, 1000, 128, device=DEVICE, dtype=torch.float16)
+    v = torch.randn_like(k)
+    torch.testing.assert_close(
+        da.decode_attention_grouped(q, k, v, splits=None, num_stages=stages),
+        da.reference(q, k, v), atol=2e-3, rtol=2e-2)

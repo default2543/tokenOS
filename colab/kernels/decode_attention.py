@@ -148,8 +148,11 @@ def _on_device(*tensors) -> bool:
 
 
 def _launch(q, k, v, splits: int, block_n: int, grouped: bool = False,
-            num_warps: int = 4):
-    """Returns (partial, m, l, compiled); `compiled` is None under the interpreter."""
+            num_warps: int = 4, num_stages: int | None = None):
+    """Returns (partial, m, l, compiled); `compiled` is None under the interpreter.
+
+    `num_stages` is Triton's software-pipelining depth; None keeps its default.
+    """
     if not _on_device(q, k, v):
         raise ValueError("expected CUDA tensors")
     batch, q_heads, head_dim = q.shape
@@ -170,16 +173,19 @@ def _launch(q, k, v, splits: int, block_n: int, grouped: bool = False,
         partial.stride(0), partial.stride(1), partial.stride(2),
     )
     group = q_heads // kv_heads
+    tuning = {"num_warps": num_warps}
+    if num_stages is not None:
+        tuning["num_stages"] = num_stages
     if grouped:
         compiled = _grouped_decode_kernel[(batch * kv_heads, splits)](
             *args, q_heads, kv_heads, group,
             HEAD_DIM=head_dim, BLOCK_N=block_n,
-            BLOCK_G=max(16, triton.next_power_of_2(group)), num_warps=num_warps,
+            BLOCK_G=max(16, triton.next_power_of_2(group)), **tuning,
         )
     else:
         compiled = _decode_kernel[(batch * q_heads, splits)](
             *args, q_heads, group,
-            HEAD_DIM=head_dim, BLOCK_N=block_n, num_warps=num_warps,
+            HEAD_DIM=head_dim, BLOCK_N=block_n, **tuning,
         )
     return partial, m, l, compiled
 
@@ -209,10 +215,27 @@ def decode_attention_split(q, k, v, *, splits: int | None = None, block_n: int =
     return _merge(partial, m, l, q.dtype)
 
 
-def decode_attention_grouped(q, k, v, *, splits: int = 8, block_n: int = 64,
-                             num_warps: int = 4) -> torch.Tensor:
-    partial, m, l, _ = _launch(q, k, v, splits=splits, block_n=block_n,
-                               grouped=True, num_warps=num_warps)
+def grouped_splits(batch: int, kv_heads: int, context: int, sm_count: int) -> int:
+    """Enough splits for about two programs per SM, keeping >= 128 tokens each.
+
+    The grouped kernel launches only batch x KV heads programs per split: at
+    batch 1 that is 4 for Qwen2.5-7B, so a fixed 8 splits fills 32 of a T4's
+    40 SMs but under a third of an A100's 108.
+    """
+    wanted = triton.cdiv(2 * sm_count, batch * kv_heads)
+    return max(1, min(wanted, context // 128))
+
+
+def decode_attention_grouped(q, k, v, *, splits: int | None = 8, block_n: int = 64,
+                             num_warps: int = 4,
+                             num_stages: int | None = None) -> torch.Tensor:
+    """`splits=None` sizes the split count to the GPU (`grouped_splits`)."""
+    if splits is None:
+        sm_count = (torch.cuda.get_device_properties(q.device).multi_processor_count
+                    if q.is_cuda else 40)
+        splits = grouped_splits(q.shape[0], k.shape[1], k.shape[2], sm_count)
+    partial, m, l, _ = _launch(q, k, v, splits=splits, block_n=block_n, grouped=True,
+                               num_warps=num_warps, num_stages=num_stages)
     return _merge(partial, m, l, q.dtype)
 
 
