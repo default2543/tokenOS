@@ -146,6 +146,40 @@ configuration vs the defaults used above and vs `torch-grouped`, in µs:
 256 cached tokens per split (`default_splits`). The sweep now extends past the
 old grid's edge (256-token blocks, 1 warp) for split-K only.
 
+### Fourth kernel run (T4, vLLM 0.6.6 environment: Triton 3.1, PyTorch 2.5.1)
+
+Run in the serving notebook's Python 3.12 environment, next to vLLM's own
+decode kernel. Every implementation passed the correctness check first.
+Eager timings, µs; bandwidth is the grouped kernel's:
+
+| Batch | Context | Triton grouped | vLLM PagedAttention | vs vLLM | vs `torch-grouped` | Bandwidth |
+|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 1,024 | 18.3 | 30.5 | 1.67x | 3.4x | 115 GB/s, 36% |
+| 1 | 1,536 | 23.8 | 34.8 | 1.46x | 3.3x | 132 GB/s, 41% |
+| 1 | 4,096 | 49.4 | 71.4 | 1.44x | 3.5x | 170 GB/s, 53% |
+| 1 | 8,192 | 81.0 | 115.0 | 1.42x | 3.9x | 207 GB/s, 65% |
+| 1 | 16,384 | 141.3 | 218.1 | 1.54x | 4.5x | 237 GB/s, 74% |
+| 8 | 1,024 | 89.4 | 115.4 | 1.29x | 2.1x | 188 GB/s, 59% |
+| 8 | 1,536 | 122.0 | 172.0 | 1.41x | 2.3x | 206 GB/s, 64% |
+| 8 | 4,096 | 282.7 | 442.0 | 1.56x | 2.7x | 237 GB/s, 74% |
+| 8 | 8,192 | 541.3 | 937.3 | 1.73x | 2.9x | 248 GB/s, 77% |
+| 8 | 16,384 | 1,062.9 | 2,026.4 | 1.91x | 3.1x | 253 GB/s, 79% |
+
+* **The Triton version decides the design.** Under Triton 3.1 the grouped
+  kernel's `tl.dot` compiles to tensor-core `mma.sync` on Turing; under
+  Colab's Triton 3.6 it did not, and the same kernel was the slowest Triton
+  variant. With tensor cores it is 2.1-4.5x faster than eager PyTorch and the
+  fastest kernel measured at every shape.
+* **vs vLLM, with the caveat:** the Triton kernels read a contiguous KV cache;
+  vLLM's reads a paged one (16-token blocks through a block table), which is
+  what lets it serve many requests without fragmentation. Part of the margin
+  is that indirection, not kernel quality alone.
+* Split-K is now slower than vLLM at every shape (e.g. 190 vs 115 µs at
+  batch 1, 8K), and its tuned defaults came from Triton 3.6; the sweep under
+  3.1 preferred 64-token blocks and 1 warp.
+* **CUDA-graph timing failed to capture** for every implementation in this
+  environment, so only eager timings exist; the cause is not yet known.
+
 The serving notebook has not run on a GPU yet. vLLM is pinned to 0.6.6.post1, the V0 engine, which
 supports Turing; if a flag fails on that version, the smoke-test cell shows it
 before the long runs.
