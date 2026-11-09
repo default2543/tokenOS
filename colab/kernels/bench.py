@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import statistics
 from pathlib import Path
 import sys
 
@@ -37,19 +38,48 @@ def _ms(fn) -> float:
     return triton.testing.do_bench(fn, warmup=25, rep=200, return_mode="median")
 
 
-def _ms_graph(fn, rep: int = 200) -> float | None:
-    """GPU time with launches replayed from a CUDA graph, as vLLM decodes.
+def _ms_graph(fn, calls: int = 20, replays: int = 30) -> tuple[float | None, str | None]:
+    """GPU time per call with launches replayed from a CUDA graph, as vLLM decodes.
 
     Eager timing includes Python launch overhead, which at short contexts
-    exceeds the kernel's own time. Returns None if capture fails.
+    exceeds the kernel's own time. Each captured call is preceded by an L2
+    flush, as `do_bench` does, and the flushes' own time is subtracted, so a
+    small KV cache cannot stay resident in L2 between calls.
+    Returns (ms, None), or (None, error) if capture fails.
     """
+    flush = torch.empty(16 * 2**20, dtype=torch.int8, device="cuda")  # 4x the T4's L2
+
+    def graph_ms(body) -> float:
+        side = torch.cuda.Stream()
+        side.wait_stream(torch.cuda.current_stream())
+        with torch.cuda.stream(side):
+            for _ in range(3):
+                body()
+        torch.cuda.current_stream().wait_stream(side)
+        graph = torch.cuda.CUDAGraph()
+        with torch.cuda.graph(graph):
+            for _ in range(calls):
+                body()
+        graph.replay()
+        torch.cuda.synchronize()
+        times = []
+        for _ in range(replays):
+            start = torch.cuda.Event(enable_timing=True)
+            end = torch.cuda.Event(enable_timing=True)
+            start.record()
+            graph.replay()
+            end.record()
+            end.synchronize()
+            times.append(start.elapsed_time(end) / calls)
+        return statistics.median(times)
+
     try:
-        try:
-            return triton.testing.do_bench_cudagraph(fn, rep=rep, return_mode="median")
-        except TypeError:  # older Triton without return_mode
-            return triton.testing.do_bench_cudagraph(fn, rep=rep)
-    except Exception:
-        return None
+        with_kernel = graph_ms(lambda: (flush.zero_(), fn()))
+        flush_only = graph_ms(flush.zero_)
+        return max(with_kernel - flush_only, 0.0), None
+    except Exception as error:
+        torch.cuda.synchronize()
+        return None, f"{type(error).__name__}: {str(error)[:200]}"
 
 
 def softmax_rows(device: str) -> list[dict]:
@@ -89,13 +119,14 @@ def decode_rows(device: str, batch: int, with_vllm: bool = False) -> list[dict]:
         moved = da.kv_bytes(k, v)
         for name, fn in impls.items():
             ms = _ms(fn)
-            graph_ms = _ms_graph(fn)
+            graph_ms, graph_error = _ms_graph(fn)
             rows.append({
                 "batch": batch, "context": context, "impl": name,
                 "us": round(ms * 1000, 2),
                 "gbps": round(moved / ms / 1e6, 1),
                 "graph_us": round(graph_ms * 1000, 2) if graph_ms else None,
                 "graph_gbps": round(moved / graph_ms / 1e6, 1) if graph_ms else None,
+                "graph_error": graph_error,
                 # One output token runs this once per layer.
                 "attention_ms_per_token_all_layers": round(ms * LAYERS, 3),
             })
@@ -130,9 +161,8 @@ def sweep_rows(device: str) -> dict:
                         try:
                             torch.testing.assert_close(run(), expected,
                                                        atol=2e-3, rtol=2e-2)
-                            ms = (_ms_graph(run, rep=50)
-                                  or triton.testing.do_bench(run, warmup=10, rep=50,
-                                                             return_mode="median"))
+                            ms = triton.testing.do_bench(run, warmup=10, rep=50,
+                                                         return_mode="median")
                         except Exception as error:  # e.g. out of shared memory
                             rows.append({"batch": batch, "context": context,
                                          "impl": name, "splits": splits,
@@ -176,7 +206,7 @@ def main(argv: list[str] | None = None) -> int:
     print("  eager: launched from Python | graph: replayed from a CUDA graph")
     for row in report["decode_attention"]:
         graph = (f"{row['graph_us']:>9} us  {row['graph_gbps']:>6} GB/s"
-                 if row["graph_us"] else f"{'capture failed':>26}")
+                 if row["graph_us"] else f"failed: {row['graph_error']}")
         share = (f"  {100 * row['graph_gbps'] / report['peak_gbps']:5.1f}% of peak"
                  if report["peak_gbps"] and row["graph_us"] else "")
         print(f"  b={row['batch']:<2} ctx={row['context']:<6} {row['impl']:<15} "
