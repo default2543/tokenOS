@@ -68,7 +68,22 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
             )
         total_tokens = usage["input_tokens"] + usage["output_tokens"]
         retries = [r for r in strategy_records if r.attempt > 1]
-        patch_bearing = [r for r in retries if "\nassert " in r.prompt]
+        memory_bearing = [r for r in retries if r.retrieved_memories]
+        patch_bearing = [
+            r for r in retries
+            if any(m.kind == "executable_constraint" for m in r.retrieved_memories)
+        ]
+        explanation_bearing = [
+            r for r in retries
+            if any(m.explanation is not None for m in r.retrieved_memories)
+        ]
+        generated_memories = [memory for r in strategy_records for memory in r.memories]
+        retrieved_memories = [
+            memory for r in strategy_records for memory in r.retrieved_memories
+        ]
+        evidence_records = [
+            r for r in strategy_records if r.evaluation.feedback is not None
+        ]
         result["strategies"][strategy] = {
             "complete": is_complete,
             "attempted_tasks": len(attempted),
@@ -90,16 +105,65 @@ def summarize(config: RunConfig, records: Iterable[AttemptRecord]) -> dict[str, 
                 r.evaluation_latency_seconds for r in strategy_records
             ),
             "failure_distribution": dict(sorted(failures.items())),
-            "patches_generated": sum(len(r.patches) for r in strategy_records),
+            "evidence_count": len(evidence_records),
+            "evidence_by_type": dict(sorted(Counter(
+                r.evaluation.feedback.kind for r in evidence_records
+                if r.evaluation.feedback is not None
+            ).items())),
+            "truncated_evidence": sum(
+                bool(r.evaluation.feedback and r.evaluation.feedback.truncated)
+                for r in evidence_records
+            ),
+            "rejected_evidence": sum(
+                not r.memories for r in evidence_records
+                if r.strategy in {"patchsearch", "patchsearch-explained"}
+            ),
+            "memories_generated": len(generated_memories),
+            "memories_retrieved": len(retrieved_memories),
+            "executable_constraints_generated": sum(
+                m.kind == "executable_constraint" for m in generated_memories
+            ),
+            "summary_fallbacks_generated": sum(
+                m.kind == "failure_summary" for m in generated_memories
+            ),
+            "executable_extraction_coverage": (
+                sum(m.kind == "executable_constraint" for m in generated_memories)
+                / len(evidence_records) if evidence_records else 0.0
+            ),
+            "summary_fallback_coverage": (
+                sum(m.kind == "failure_summary" for m in generated_memories)
+                / len(evidence_records) if evidence_records else 0.0
+            ),
+            "retrieved_memory_tokens": sum(
+                (len(m.content) + 3) // 4 for m in retrieved_memories
+            ),
+            # Compatibility aliases retained for existing report consumers.
+            "patches_generated": sum(
+                m.kind == "executable_constraint" for m in generated_memories
+            ),
             "patches_retrieved": sum(
-                prompt.count("\nassert ")
-                for prompt in (r.prompt for r in strategy_records)
+                m.kind == "executable_constraint" for m in retrieved_memories
             ),
             "retry_model_calls": len(retries),
             "retry_input_tokens": sum(r.usage.input_tokens for r in retries),
+            "memory_bearing_attempts": len(memory_bearing),
+            "memory_retry_successes": sum(r.evaluation.passed for r in memory_bearing),
             "patch_bearing_attempts": len(patch_bearing),
             "patch_bearing_input_tokens": sum(
                 r.usage.input_tokens for r in patch_bearing
+            ),
+            "explanations_generated": sum(
+                memory.explanation is not None for memory in generated_memories
+            ),
+            "explanations_retrieved": sum(
+                memory.explanation is not None for memory in retrieved_memories
+            ),
+            "explanation_bearing_attempts": len(explanation_bearing),
+            "explanation_bearing_input_tokens": sum(
+                r.usage.input_tokens for r in explanation_bearing
+            ),
+            "explanation_retry_successes": sum(
+                r.evaluation.passed for r in explanation_bearing
             ),
         }
     paired = set(config.task_ids)

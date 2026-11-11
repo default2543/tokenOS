@@ -39,6 +39,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                     "message": f"candidate did not define callable {entry_point}",
                 }
             )
+            connection.close()
             return
         with swallow_io():
             actual = function(*inp)
@@ -46,9 +47,13 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
             {
                 "kind": "wrong_answer",
                 "message": "candidate output did not match the reference oracle",
-                "actual_repr": clipped_repr(actual),
+                "observations": [
+                    {"kind": "actual_value", "value": clipped_repr(actual)}
+                ],
+                "provenance": "humaneval-plus-oracle",
             }
         )
+        connection.close()
     except SyntaxError as exc:
         connection.send(
             {
@@ -57,6 +62,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                 "exception_type": "SyntaxError",
             }
         )
+        connection.close()
     except BaseException as exc:
         connection.send(
             {
@@ -65,6 +71,7 @@ def diagnostic_worker(solution: str, entry_point: str, inp: Any, connection: Any
                 "exception_type": type(exc).__name__,
             }
         )
+        connection.close()
 
 
 def diagnose(
@@ -123,12 +130,27 @@ def diagnose(
         if process.is_alive():
             process.kill()
         process.join(timeout=1.0)
+        process.close()
         receiver.close()
     # EvalPlus stores positional arguments as lists. Persist them as a tuple so
     # PatchSearch can safely render ``entry_point(*args)`` without ambiguity.
-    diagnostic["input_repr"] = clipped_repr(tuple(inputs[index]))
+    observations = diagnostic.setdefault("observations", [])
+    observations.append(
+        {
+            "kind": "function_call",
+            "value": clipped_repr(tuple(inputs[index])),
+            "trusted": True,
+        }
+    )
     if diagnostic["kind"] in {"wrong_answer", "runtime_error", "timeout"}:
-        diagnostic["expected_repr"] = clipped_repr(expected[index])
+        observations.append(
+            {
+                "kind": "expected_value",
+                "value": clipped_repr(expected[index]),
+                "trusted": True,
+            }
+        )
+    diagnostic["provenance"] = "humaneval-plus-oracle"
     return diagnostic
 
 
@@ -178,7 +200,7 @@ def evaluate(job: dict[str, Any]) -> dict[str, Any]:
         "base_status": base_status,
         "plus_status": plus_status,
         "passed": passed,
-        "feedback": feedback,
+        "evidence": feedback,
     }
 
 

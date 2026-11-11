@@ -5,7 +5,8 @@ import shutil
 import subprocess
 from typing import Any
 
-from tokenos.models import EvaluationResult, FailureFeedback, Problem, RunConfig
+from tokenos.adapters import AdapterError, get_benchmark_adapter
+from tokenos.models import EvaluationResult, Problem, RunConfig
 
 
 class EvaluatorError(RuntimeError):
@@ -17,7 +18,8 @@ class DockerEvaluator:
         self.config = config
 
     def evaluate(self, problem: Problem, solution: str) -> EvaluationResult:
-        job = json.dumps({"task_id": problem.task_id, "solution": solution})
+        adapter = get_benchmark_adapter(problem.benchmark)
+        job = json.dumps(adapter.build_job(problem, solution))
         command = [
             "docker",
             "run",
@@ -62,13 +64,10 @@ class DockerEvaluator:
             payload: dict[str, Any] = json.loads(completed.stdout)
         except json.JSONDecodeError as exc:
             raise EvaluatorError("evaluator returned invalid JSON") from exc
-        feedback = payload.get("feedback")
-        return EvaluationResult(
-            base_status=payload["base_status"],
-            plus_status=payload["plus_status"],
-            passed=bool(payload["passed"]),
-            feedback=FailureFeedback(**feedback) if feedback is not None else None,
-        )
+        try:
+            return adapter.decode_result(problem, payload)
+        except AdapterError as exc:
+            raise EvaluatorError(f"invalid evaluator protocol: {exc}") from exc
 
 
 def docker_status(image: str) -> dict[str, bool]:
